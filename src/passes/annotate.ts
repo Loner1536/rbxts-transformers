@@ -141,6 +141,46 @@ function collectAnnotations(
     visit(sourceFile);
 }
 
+function organizePreamble(src: string): string {
+    const lines = src.split("\n");
+    let i = 0;
+
+    // Collect leading directives and header comments
+    const directives: string[] = [];
+    while (i < lines.length && lines[i].startsWith("--")) {
+        directives.push(lines[i++]);
+    }
+
+    // Collect all top-level local declarations before the first function/other code
+    const services: string[] = [];
+    const imports: string[] = [];
+    const bindings: string[] = [];
+
+    while (i < lines.length) {
+        const line = lines[i];
+        if (line.trim() === "") { i++; continue; }
+
+        if (/^local \w+ = game:GetService\(/.test(line)) {
+            services.push(line); i++;
+        } else if (/^local \w+ = require\(/.test(line) || /^local \w+ = TS\.import\(/.test(line)) {
+            imports.push(line); i++;
+        } else if (/^local \w+ = \w+[\.\[]/.test(line) && !/^local function/.test(line)) {
+            // property access binding: local x = module.x or local x = module["x"]
+            bindings.push(line); i++;
+        } else {
+            break;
+        }
+    }
+
+    const out: string[] = [...directives];
+    if (services.length > 0) out.push("", "-- Services", ...services);
+    if (imports.length > 0) out.push("", "-- Imports", ...imports);
+    if (bindings.length > 0) out.push("", "-- Bindings", ...bindings);
+    if (i < lines.length) out.push("", ...lines.slice(i));
+
+    return out.join("\n");
+}
+
 function hoistGetService(src: string): string {
     // Count occurrences of each game:GetService("X") call
     const re = /game:GetService\("([^"]+)"\)/g;
@@ -196,6 +236,10 @@ function injectAnnotations(luauPath: string, fileMap: Map<string, FnAnnotation>)
     // Hoist any repeated game:GetService() calls injected by the compiler
     const hoisted = hoistGetService(src);
     if (hoisted !== src) { src = hoisted; changed = true; }
+
+    // Organize preamble into labeled sections
+    const organized = organizePreamble(src);
+    if (organized !== src) { src = organized; changed = true; }
 
     if (changed) fs.writeFileSync(luauPath, src, "utf8");
 }
