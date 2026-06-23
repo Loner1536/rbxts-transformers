@@ -297,7 +297,7 @@ Supported types: `number`, `string`, `boolean`, `Vector3`, `Vector2`, `CFrame`, 
 
 ### Output formatting
 
-The transformer post-processes every compiled `.luau` file so the output looks like a human wrote it, not a compiler.
+This one's a personal pet peeve — yes, most people will never open a compiled `.luau` file. But the transformer post-processes every compiled `.luau` file so the output looks like a human wrote it anyway, not a compiler.
 
 **Preamble organisation** — top-level declarations are sorted into labeled sections in dependency order. Sections are sorted by line length (longest first). If you put a comment before a group of imports in TypeScript, that comment becomes the section label:
 
