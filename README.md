@@ -4,7 +4,7 @@
 >
 > **What carried over:** Luau type annotation injection on function parameters for native codegen (primitives, Roblox value types, arrays).
 >
-> **What's new:** `--!optimize 2` on every file, `game:GetService()` hoisting to module-level locals, repeated property chain hoisting, loop bounds hoisting, `const` keyword for TypeScript `const` declarations, output formatting so compiled files look human-written.
+> **What's new:** `--!optimize 2` on every file, `game:GetService()` hoisting to module-level locals, repeated property chain hoisting, `const` keyword for TypeScript `const` declarations, output formatting so compiled files look human-written.
 >
 > **What's different:** The old package also annotated return types, local variable declarations, class methods, and user-defined interfaces/type aliases. Those are not yet in this package — they're planned. The old package also had reliability issues that this rewrite addresses.
 
@@ -204,68 +204,6 @@ end
 
 ---
 
-### Loop bounds hoisting
-
-`arr.size()` in a `for` loop condition is re-evaluated on every iteration in compiled output. The loops pass hoists it to a local before the loop.
-
-```typescript
-// TypeScript source
-export function sumWeighted(values: Array<number>, weights: Array<number>): number {
-    let total = 0;
-    for (let i = 0; i < values.size(); i++) {
-        total += values[i] * weights[i];
-    }
-    return total;
-}
-```
-
-```lua
--- Without transformer
-local function sumWeighted(values, weights)
-    local total = 0
-    for i = 0, #values - 1 do
-        total += values[i + 1] * weights[i + 1]
-    end
-    return total
-end
-```
-
-```lua
--- With transformer
-local function sumWeighted(values: {number}, weights: {number}): number
-    local total = 0
-
-    do
-        const _len_values = #values
-
-        do
-            local i = 0
-            local _shouldIncrement = false
-
-            while true do
-                if _shouldIncrement then
-                    i += 1
-                else
-                    _shouldIncrement = true
-                end
-
-                if not (i < _len_values) then
-                    break
-                end
-
-                total += values[i + 1] * weights[i + 1]
-            end
-        end
-    end
-
-    return total
-end
-```
-
-**2.3× faster** (combined with `--!native` and type annotations on `values`/`weights`).
-
----
-
 ### Luau type annotation injection
 
 After the compiler writes `.luau` files, the transformer injects Luau type annotations on function parameters and return types. This lets the native compiler generate specialized code for numeric and Roblox value types.
@@ -342,35 +280,33 @@ local data = TS.import(script, ...)
 
 ## Benchmarks
 
-Measured in Roblox Studio server context. 100,000 iterations per benchmark (10,000 for `cfLookAt`). Same TypeScript source compiled two ways — with and without the transformer.
-
-The optimized suite uses `//!native` in the source file. Most of the speedup on pure math functions comes from `--!native` itself — the transformer's role there is injecting the type annotations that make `--!native` effective. The GetService hoisting, property chain caching, and loop bounds hoisting gains are independent of `--!native` and show up in any file.
+Measured in Roblox Studio server context. 100,000 iterations per benchmark (10,000 for `cfLookAt`). Both suites use `//!native` — the only variable is whether the transformer is applied, so the numbers reflect what the transformer itself contributes on top of native.
 
 | Benchmark | With transformer | Without | Speedup | Driver |
 |-----------|-----------------|---------|---------|--------|
-| integrate (Verlet) | 0.042 µs | 0.055 µs | **1.3×** | `--!native` + type annotations |
-| dot (V3 manual) | 0.016 µs | 0.032 µs | **2.0×** | `--!native` + type annotations |
-| cross (V3 manual) | 0.018 µs | 0.049 µs | **2.7×** | `--!native` + 6× field hoisting |
-| lerpVec3 (V3 manual) | 0.015 µs | 0.047 µs | **3.1×** | `--!native` + 3× field hoisting |
-| encodeFixed (buf+math) | 0.015 µs | 0.032 µs | **2.1×** | `--!native` + type annotations |
-| encodePacket (3× fixed) | 0.018 µs | 0.067 µs | **3.7×** | `--!native` stacked across 3 calls |
-| sumWeighted (loop) | 0.046 µs | 0.107 µs | **2.3×** | `--!native` + loop bounds hoist + type annotations |
-| dotProduct (loop) | 0.067 µs | 0.109 µs | **1.6×** | `--!native` + loop bounds hoist + type annotations |
-| norm (loop+sqrt) | 0.048 µs | 0.111 µs | **2.3×** | `--!native` + loop bounds hoist + type annotations |
-| mathHeavy (trig+sqrt) | 0.038 µs | 0.052 µs | **1.4×** | `--!native` + type annotations |
-| fib(20) (iter) | 0.048 µs | 0.155 µs | **3.2×** | `--!native` on integer loop |
-| cfLookAt (ctor) | 0.079 µs | 0.079 µs | 1.0× | C++ floor — no Luau work |
-| cfChain (mul+angles) | 0.076 µs | 0.077 µs | 1.0× | C++ floor — no Luau work |
-| serviceWork (GetService ×2) | 0.185 µs | 0.440 µs | **2.4×** | GetService hoisting — no `--!native` needed |
-| multiSvc (GetService ×3) | 0.142 µs | 0.480 µs | **3.4×** | GetService hoisting — no `--!native` needed |
-| cameraWork (prop chain) | 0.148 µs | 0.215 µs | **1.5×** | property chain hoisting — no `--!native` needed |
-| formatStats (template) | 0.170 µs | 0.175 µs | ~1× | string — no arithmetic |
-| buildKey (template) | 0.068 µs | 0.086 µs | **1.3×** | `--!native` + type annotations |
+| integrate (Verlet) | 0.058 µs | 0.071 µs | **1.2×** | type annotations |
+| dot (V3 manual) | 0.025 µs | 0.046 µs | **1.8×** | type annotations |
+| cross (V3 manual) | 0.024 µs | 0.072 µs | **3.0×** | 6× field hoisting + type annotations |
+| lerpVec3 (V3 manual) | 0.026 µs | 0.061 µs | **2.3×** | 3× field hoisting + type annotations |
+| encodeFixed (buf+math) | 0.025 µs | 0.026 µs | ~1× | — |
+| encodePacket (3× fixed) | 0.030 µs | 0.028 µs | ~1× | — |
+| sumWeighted (loop) | 0.051 µs | 0.054 µs | ~1× | type annotations |
+| dotProduct (loop) | 0.050 µs | 0.060 µs | **1.2×** | type annotations |
+| norm (loop+sqrt) | 0.052 µs | 0.058 µs | **1.1×** | type annotations |
+| mathHeavy (trig+sqrt) | 0.044 µs | 0.050 µs | **1.1×** | type annotations |
+| fib(20) (iter) | 0.062 µs | 0.071 µs | **1.1×** | type annotations |
+| cfLookAt (ctor) | 0.087 µs | 0.082 µs | ~1× | C++ floor — no Luau work |
+| cfChain (mul+angles) | 0.102 µs | 0.092 µs | ~1× | C++ floor — no Luau work |
+| serviceWork (GetService ×2) | 0.243 µs | 0.481 µs | **2.0×** | GetService hoisting |
+| multiSvc (GetService ×3) | 0.154 µs | 0.505 µs | **3.3×** | GetService hoisting |
+| cameraWork (prop chain) | 0.185 µs | 0.218 µs | **1.2×** | `camera.CFrame` hoisted (2 reads → 1) |
+| formatStats (template) | 0.191 µs | 0.187 µs | ~1× | string — no arithmetic |
+| buildKey (template) | 0.085 µs | 0.079 µs | ~1× | — |
 
 ### What the transformer cannot help with
 
-- **Pure engine API calls** — `CFrame.lookAt`, `CFrame.Angles`, `CFrame` multiplication all execute immediately in C++. `--!native` cannot speed up code that is already running natively. `cfLookAt` and `cfChain` show 1.0× for this reason.
-- **Single-access properties** — the cache pass only hoists when a property is read 2+ times in the same function. One read has nothing to eliminate.
+- **Pure engine API calls** — `CFrame.lookAt`, `CFrame.Angles`, `CFrame` multiplication execute immediately in C++. `--!native` cannot speed up code that is already running natively.
+- **Single-access properties** — the cache pass only hoists when a property is read 2+ times in the same function.
 - **String-heavy functions** — Luau string operations are not meaningfully accelerated by the native compiler.
 
 ---
