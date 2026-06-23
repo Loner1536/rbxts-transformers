@@ -1,0 +1,32 @@
+{
+    "compilerOptions": {
+        "target": "ESNext",
+        "module": "commonjs",
+        "moduleDetection": "force",
+        "moduleResolution": "Node",
+        "strict": true,
+        "noLib": true,
+        "esModuleInterop": true,
+        "allowSyntheticDefaultImports": true,
+        "forceConsistentCasingInFileNames": true,
+        "rootDir": "./src",
+        "outDir": "./out/src",
+        "typeRoots": [
+            "./node_modules/@rbxts"
+        ],
+        "plugins": [
+            {
+                "transform": "rbxts-transform-boost",
+                "optimize": true,
+                "hoist": true
+            }
+        ]
+    },
+    "include": [
+        "./src/server",
+        "./src/shared/fns.ts"
+    ],
+    "rbxts": {
+        "includePath": "out/include"
+    }
+}

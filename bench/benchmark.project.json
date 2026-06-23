@@ -1,0 +1,20 @@
+{
+    "name": "perf-benchmark",
+    "emitLegacyScripts": false,
+    "tree": {
+        "$className": "DataModel",
+        "ServerScriptService": {
+            "$className": "ServerScriptService",
+            "$path": "out/src/server"
+        },
+        "ReplicatedStorage": {
+            "$className": "ReplicatedStorage",
+            "shared": {
+                "$path": "out/src/shared"
+            },
+            "include": {
+                "$path": "out/include"
+            }
+        }
+    }
+}

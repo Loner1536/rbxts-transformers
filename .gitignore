@@ -1,0 +1,6 @@
+node_modules/
+dist/
+bench/out/
+bench/out-notransform/
+bench/node_modules/
+bench/*.rbxlx
