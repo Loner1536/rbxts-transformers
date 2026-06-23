@@ -3,10 +3,16 @@
     "emitLegacyScripts": false,
     "tree": {
         "$className": "DataModel",
-        "ServerScriptService": { "$path": "out/roblox-ts/src/server" },
+        "ServerScriptService": {
+            "$path": "out/roblox-ts/src/server"
+        },
         "ReplicatedStorage": {
-            "shared": { "$path": "out/roblox-ts/src/shared" },
-            "include": { "$path": "out/roblox-ts/include" }
+            "shared": {
+                "$path": "out/roblox-ts/src/shared"
+            },
+            "include": {
+                "$path": "out/roblox-ts/include"
+            }
         }
     }
 }

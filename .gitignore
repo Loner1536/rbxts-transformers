@@ -6,3 +6,6 @@ bench/*.rbxlx
 package-lock.json
 bench/package-lock.json
 *.lock
+
+scripts
+dump.txt

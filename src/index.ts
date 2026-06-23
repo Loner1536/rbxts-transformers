@@ -14,6 +14,9 @@ export default function(
     const { optimize = true, strict = true, hoist = true } = config;
 
     return (ctx: ts.TransformationContext) => (sourceFile: ts.SourceFile): ts.SourceFile => {
+        if (sourceFile.fileName.endsWith("fns-bare.ts")) {
+            return sourceFile;
+        }
         annotatePass(ts, program, sourceFile);
         let result = sourceFile;
         if (hoist) result = cachePass(ts, program, ctx, result);

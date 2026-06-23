@@ -1,6 +1,6 @@
 {
     "name": "rbxts-transform-boost",
-    "version": "1.1.1",
+    "version": "1.2.0",
     "description": "roblox-ts transformer: automatic --!native, GetService hoisting, property chain caching, loop bounds hoisting, and Luau type annotation injection",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
@@ -10,10 +10,10 @@
     ],
     "scripts": {
         "build": "tsc",
-        "bench:rotor": "npm run build && cd bench && ~/.rokit/bin/rotor build",
-        "bench:roblox-ts": "npm run build && cd bench && ./node_modules/.bin/rbxtsc -p tsconfig.roblox-ts.json --rojo roblox-ts.project.json",
-        "bench:rbxlx:rotor": "npm run bench:rotor && cd bench && ~/.rokit/bin/rojo build rotor.project.json -o benchmark-rotor.rbxlx",
-        "bench:rbxlx:roblox-ts": "npm run bench:roblox-ts && cd bench && ~/.rokit/bin/rojo build roblox-ts.project.json -o benchmark-roblox-ts.rbxlx"
+        "bench:rotor": "bun run build && cd bench && rotor build -p tsconfig.rotor.json && rotor build -p tsconfig.notransform.rotor.json",
+        "bench:roblox-ts": "bun run build && cd bench && rbxtsc -p tsconfig.roblox-ts.json --rojo roblox-ts.project.json && rbxtsc -p tsconfig.notransform.roblox-ts.json --rojo roblox-ts.project.json",
+        "bench:rbxlx:rotor": "bun run bench:rotor && cd bench && rojo build rotor.project.json -o benchmark-rotor.rbxlx",
+        "bench:rbxlx:roblox-ts": "npm run bench:roblox-ts && cd bench && rojo build roblox-ts.project.json -o benchmark-roblox-ts.rbxlx"
     },
     "keywords": [
         "roblox-ts",

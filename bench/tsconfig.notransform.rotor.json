@@ -1,0 +1,14 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "moduleResolution": "Node",
+        "outDir": "./out/rotor/src",
+        "plugins": []
+    },
+    "include": [
+        "./src/shared/fns-bare.ts"
+    ],
+    "rbxts": {
+        "includePath": "out/rotor/include"
+    }
+}

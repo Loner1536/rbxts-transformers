@@ -1,0 +1,12 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "outDir": "./out/roblox-ts/src"
+    },
+    "include": [
+        "./src/shared/fns-bare.ts"
+    ],
+    "rbxts": {
+        "includePath": "out/roblox-ts/include"
+    }
+}

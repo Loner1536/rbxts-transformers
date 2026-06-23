@@ -10,22 +10,13 @@
         "allowSyntheticDefaultImports": true,
         "forceConsistentCasingInFileNames": true,
         "rootDir": "./src",
-        "outDir": "./out/rotor/src",
         "typeRoots": [
             "./node_modules/@rbxts"
         ],
-        "plugins": [
-            {
-                "transform": "rbxts-transform-boost",
-                "optimize": true,
-                "hoist": true
-            }
+        "types": [
+            "types"
         ]
     },
-    "include": [
-        "./src/server",
-        "./src/shared/fns.ts"
-    ],
     "rbxts": {
         "includePath": "out/rotor/include"
     }

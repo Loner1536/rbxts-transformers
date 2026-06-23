@@ -3,10 +3,16 @@
     "emitLegacyScripts": false,
     "tree": {
         "$className": "DataModel",
-        "ServerScriptService": { "$path": "out/rotor/src/server" },
+        "ServerScriptService": {
+            "$path": "out/rotor/src/server"
+        },
         "ReplicatedStorage": {
-            "shared": { "$path": "out/rotor/src/shared" },
-            "include": { "$path": "out/rotor/include" }
+            "shared": {
+                "$path": "out/rotor/src/shared"
+            },
+            "include": {
+                "$path": "out/rotor/include"
+            }
         }
     }
 }

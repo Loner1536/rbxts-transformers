@@ -91,6 +91,76 @@ function hoistPropertyChains(
     return ts.visitEachChild(sourceFile, visitor, ctx) as ts.SourceFile;
 }
 
+/**
+ * Collect every identifier name that is assigned (mutated) anywhere inside
+ * the given node.  This includes:
+ *   - plain assignment:  x = …
+ *   - compound assignment: x += …  x -= …  etc.
+ *   - prefix/postfix ++/--
+ *   - `for` / `for…of` / `for…in` loop variables declared with `let`
+ *   - `let` variable declarations (re-assignable by nature)
+ */
+function collectMutatedIdentifiers(
+    ts: typeof import("typescript"),
+    body: ts.Block,
+): Set<string> {
+    const mutated = new Set<string>();
+
+    walk(ts, body, node => {
+        // x = …  or  x += …  etc.
+        if (ts.isBinaryExpression(node)) {
+            const op = node.operatorToken.kind;
+            const isAssign =
+                op === ts.SyntaxKind.EqualsToken ||
+                op === ts.SyntaxKind.PlusEqualsToken ||
+                op === ts.SyntaxKind.MinusEqualsToken ||
+                op === ts.SyntaxKind.AsteriskEqualsToken ||
+                op === ts.SyntaxKind.SlashEqualsToken ||
+                op === ts.SyntaxKind.PercentEqualsToken ||
+                op === ts.SyntaxKind.AmpersandEqualsToken ||
+                op === ts.SyntaxKind.BarEqualsToken ||
+                op === ts.SyntaxKind.CaretEqualsToken ||
+                op === ts.SyntaxKind.LessThanLessThanEqualsToken ||
+                op === ts.SyntaxKind.GreaterThanGreaterThanEqualsToken ||
+                op === ts.SyntaxKind.GreaterThanGreaterThanGreaterThanEqualsToken ||
+                op === ts.SyntaxKind.AsteriskAsteriskEqualsToken ||
+                op === ts.SyntaxKind.AmpersandAmpersandEqualsToken ||
+                op === ts.SyntaxKind.BarBarEqualsToken ||
+                op === ts.SyntaxKind.QuestionQuestionEqualsToken;
+
+            if (isAssign && ts.isIdentifier(node.left)) {
+                mutated.add(node.left.text);
+            }
+        }
+
+        // ++x  --x  x++  x--
+        if (
+            (ts.isPrefixUnaryExpression(node) || ts.isPostfixUnaryExpression(node)) &&
+            ts.isIdentifier(node.operand)
+        ) {
+            mutated.add((node.operand as ts.Identifier).text);
+        }
+
+        // `let x` or `let x = …` declarations (re-assignable)
+        if (ts.isVariableDeclarationList(node) && (node.flags & ts.NodeFlags.Let)) {
+            for (const decl of node.declarations) {
+                if (ts.isIdentifier(decl.name)) mutated.add(decl.name.text);
+            }
+        }
+
+        // for (x of …) / for (x in …) where x is an existing identifier
+        if (
+            (ts.isForOfStatement(node) || ts.isForInStatement(node)) &&
+            ts.isIdentifier((node as ts.ForOfStatement | ts.ForInStatement).initializer)
+        ) {
+            const init = (node as ts.ForOfStatement | ts.ForInStatement).initializer as ts.Identifier;
+            mutated.add(init.text);
+        }
+    });
+
+    return mutated;
+}
+
 function hoistInFunction(
     ts: typeof import("typescript"),
     fn: ts.FunctionLikeDeclaration,
@@ -98,6 +168,28 @@ function hoistInFunction(
     ctx: ts.TransformationContext,
 ): ts.FunctionLikeDeclaration {
     if (!fn.body || !ts.isBlock(fn.body)) return fn;
+
+    // Collect all identifiers that are mutated anywhere in this function body.
+    // We must not hoist any property chain that starts with (or passes through)
+    // a mutable identifier, because the cached value would be stale and — more
+    // importantly — the hoisted `const _cacheN = x.Prop` declaration would be
+    // placed at the top of the block before `x` is assigned, causing TS2448.
+    const mutatedIds = collectMutatedIdentifiers(ts, fn.body);
+
+    /**
+     * Returns true when any prefix segment of the dot-separated chain key is
+     * a mutated identifier.  E.g. for "Root.IsA", the root "Root" is checked;
+     * for "a.b.c", both "a" and "a.b" are checked.
+     */
+    function chainHasMutableSegment(key: string): boolean {
+        const parts = key.split(".");
+        let prefix = "";
+        for (let i = 0; i < parts.length - 1; i++) {
+            prefix = i === 0 ? parts[0] : `${prefix}.${parts[i]}`;
+            if (mutatedIds.has(parts[i])) return true;
+        }
+        return false;
+    }
 
     const counts = new Map<string, number>();
     walk(ts, fn.body, node => {
@@ -116,6 +208,8 @@ function hoistInFunction(
         .sort((a, b) => b[0].length - a[0].length);
 
     for (const [key] of candidates) {
+        // Skip chains that touch a mutable variable — caching them is unsafe.
+        if (chainHasMutableSegment(key)) continue;
         const alreadyCovered = Array.from(toHoist.keys()).some(h => h.startsWith(key + "."));
         if (alreadyCovered) continue;
         toHoist.set(key, `_cache${counter++}`);

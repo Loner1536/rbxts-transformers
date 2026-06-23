@@ -1,7 +1,8 @@
 {
     "extends": "./tsconfig.json",
     "compilerOptions": {
-        "outDir": "./out/roblox-ts/src",
+        "moduleResolution": "Node",
+        "outDir": "./out/rotor/src",
         "plugins": [
             {
                 "transform": "rbxts-transform-boost",
@@ -16,6 +17,6 @@
         "./src/shared/fns.ts"
     ],
     "rbxts": {
-        "includePath": "out/roblox-ts/include"
+        "includePath": "out/rotor/include"
     }
 }

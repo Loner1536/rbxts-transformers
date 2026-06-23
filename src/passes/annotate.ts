@@ -320,8 +320,49 @@ function addSpacing(src: string): string {
     return out.join("\n");
 }
 
+const writingFiles = new Set<string>();
+
+function promoteConstIfUnmutated(src: string, name: string): string {
+    const lines = src.split("\n");
+    const escaped = escapeRegex(name);
+    const declRe = new RegExp(`^(\\t*)local (${escaped}) =`);
+
+    const reassignRe = new RegExp(
+        `^\\t*${escaped}\\s*(?:\\+|-|\\*|/{1,2}|%|\\^|\\.\\.)?=(?!=)`,
+    );
+
+    for (let i = 0; i < lines.length; i++) {
+        const m = lines[i].match(declRe);
+        if (!m) continue;
+
+        const declIndent = m[1].length;
+        let mutated = false;
+
+        for (let j = i + 1; j < lines.length; j++) {
+            const line = lines[j];
+            const trimmed = line.replace(/^\t*/, "");
+            if (trimmed === "") continue;
+
+            const indent = line.length - trimmed.length;
+            if (indent < declIndent) break;
+
+            if (reassignRe.test(line)) {
+                mutated = true;
+                break;
+            }
+        }
+
+        if (!mutated) {
+            lines[i] = lines[i].replace(declRe, `$1const $2 =`);
+        }
+    }
+
+    return lines.join("\n");
+}
+
 function injectAnnotations(luauPath: string, entry: FileSidecar): void {
     if (!fs.existsSync(luauPath)) return;
+    if (writingFiles.has(luauPath)) return;
     let src = fs.readFileSync(luauPath, "utf8");
     let changed = false;
 
@@ -330,7 +371,7 @@ function injectAnnotations(luauPath: string, entry: FileSidecar): void {
         if (ann.params.every(p => p === null) && ann.ret === null) continue;
 
         const re = new RegExp(
-            `(local function ${escapeRegex(fnName)}\\()([^)]*)(\\.\\.\\.)?(\\))`,
+            `(local function ${escapeRegex(fnName)}\\()([^)]*)(\\.\\.\\.)?(\\))(?:\\s*:\\s*[^\\r\\n]+)?`,
         );
         src = src.replace(re, (_m, open: string, rawParams: string, vararg: string | undefined, close: string) => {
             const names = rawParams.split(",").map((s: string) => s.trim()).filter(Boolean);
@@ -346,10 +387,8 @@ function injectAnnotations(luauPath: string, entry: FileSidecar): void {
         });
     }
 
-    // Replace local → const for TypeScript const declarations
     for (const name of entry.consts) {
-        const re = new RegExp(`^(\\t*)local (${escapeRegex(name)}) =`, "m");
-        const next = src.replace(re, `$1const $2 =`);
+        const next = promoteConstIfUnmutated(src, name);
         if (next !== src) { src = next; changed = true; }
     }
 
@@ -365,7 +404,16 @@ function injectAnnotations(luauPath: string, entry: FileSidecar): void {
     const spaced = addSpacing(src);
     if (spaced !== src) { src = spaced; changed = true; }
 
-    if (changed) fs.writeFileSync(luauPath, src, "utf8");
+    if (changed) {
+        writingFiles.add(luauPath);
+        try {
+            fs.writeFileSync(luauPath, src, "utf8");
+        } finally {
+            setTimeout(() => {
+                writingFiles.delete(luauPath);
+            }, 50);
+        }
+    }
 }
 
 function escapeRegex(s: string): string {
@@ -378,6 +426,7 @@ function installWatcher(outDir: string): void {
     const watcher = fs.watch(outDir, { recursive: true }, (_event, filename) => {
         if (!filename || !filename.endsWith(".luau")) return;
         const full = path.join(outDir, filename);
+        if (writingFiles.has(full)) return;
         const entry = sidecar.get(full);
         if (!entry) return;
         try { injectAnnotations(full, entry); } catch { /* ignore */ }
@@ -395,3 +444,4 @@ export function annotatePass(
     collectAnnotations(ts, program.getTypeChecker(), sourceFile, outPath);
     installWatcher(program.getCompilerOptions().outDir!);
 }
+
