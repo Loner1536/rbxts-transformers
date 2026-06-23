@@ -8,7 +8,7 @@
         "build": "tsc",
         "bench:build": "npm run build && cd bench && ~/.rokit/bin/rotor build",
         "bench:build:baseline": "cd bench && ~/.rokit/bin/rotor build -p tsconfig.notransform.json -i out/include",
-        "bench:rbxlx": "npm run bench:build && npm run bench:build:baseline && cd bench && ~/.rokit/bin/rojo build benchmark.project.json -o benchmark.rbxlx"
+        "bench:rbxlx": "npm run bench:build && npm run bench:build:baseline && cd bench && ~/.rokit/bin/rojo build default.project.json -o benchmark.rbxlx"
     },
     "keywords": [
         "roblox-ts",

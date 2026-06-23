@@ -46,12 +46,12 @@ function runSuite(fns: typeof opt): void {
     bench("buildKey    (template)", N, () => fns.buildKey("player", 42, "data"));
 }
 
-print("\n=== optimized (--!native + transformer) ===");
+print("\n=== with transformer (--!native + hoisting + annotations) ===");
 runSuite(opt);
-print("===========================================\n");
+print("===========================================================\n");
 
 task.wait(1);
 
-print("\n=== baseline (plain rotor, no transformer) ===");
+print("\n=== without transformer (--!native only) ===");
 runSuite(base);
-print("==============================================\n");
+print("==============================================================\n");

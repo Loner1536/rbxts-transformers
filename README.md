@@ -344,26 +344,28 @@ local data = TS.import(script, ...)
 
 Measured in Roblox Studio server context. 100,000 iterations per benchmark (10,000 for `cfLookAt`). Same TypeScript source compiled two ways — with and without the transformer.
 
+The optimized suite uses `//!native` in the source file. Most of the speedup on pure math functions comes from `--!native` itself — the transformer's role there is injecting the type annotations that make `--!native` effective. The GetService hoisting, property chain caching, and loop bounds hoisting gains are independent of `--!native` and show up in any file.
+
 | Benchmark | With transformer | Without | Speedup | Driver |
 |-----------|-----------------|---------|---------|--------|
 | integrate (Verlet) | 0.042 µs | 0.055 µs | **1.3×** | `--!native` + type annotations |
-| dot (V3 manual) | 0.016 µs | 0.032 µs | **2.0×** | `--!native` |
+| dot (V3 manual) | 0.016 µs | 0.032 µs | **2.0×** | `--!native` + type annotations |
 | cross (V3 manual) | 0.018 µs | 0.049 µs | **2.7×** | `--!native` + 6× field hoisting |
 | lerpVec3 (V3 manual) | 0.015 µs | 0.047 µs | **3.1×** | `--!native` + 3× field hoisting |
-| encodeFixed (buf+math) | 0.015 µs | 0.032 µs | **2.1×** | `--!native` |
+| encodeFixed (buf+math) | 0.015 µs | 0.032 µs | **2.1×** | `--!native` + type annotations |
 | encodePacket (3× fixed) | 0.018 µs | 0.067 µs | **3.7×** | `--!native` stacked across 3 calls |
-| sumWeighted (loop) | 0.046 µs | 0.107 µs | **2.3×** | `--!native` + loop bounds hoist |
-| dotProduct (loop) | 0.067 µs | 0.109 µs | **1.6×** | `--!native` + loop bounds hoist |
-| norm (loop+sqrt) | 0.048 µs | 0.111 µs | **2.3×** | `--!native` + loop bounds hoist |
-| mathHeavy (trig+sqrt) | 0.038 µs | 0.052 µs | **1.4×** | `--!native` |
+| sumWeighted (loop) | 0.046 µs | 0.107 µs | **2.3×** | `--!native` + loop bounds hoist + type annotations |
+| dotProduct (loop) | 0.067 µs | 0.109 µs | **1.6×** | `--!native` + loop bounds hoist + type annotations |
+| norm (loop+sqrt) | 0.048 µs | 0.111 µs | **2.3×** | `--!native` + loop bounds hoist + type annotations |
+| mathHeavy (trig+sqrt) | 0.038 µs | 0.052 µs | **1.4×** | `--!native` + type annotations |
 | fib(20) (iter) | 0.048 µs | 0.155 µs | **3.2×** | `--!native` on integer loop |
 | cfLookAt (ctor) | 0.079 µs | 0.079 µs | 1.0× | C++ floor — no Luau work |
 | cfChain (mul+angles) | 0.076 µs | 0.077 µs | 1.0× | C++ floor — no Luau work |
-| serviceWork (GetService ×2) | 0.185 µs | 0.440 µs | **2.4×** | GetService hoisting |
-| multiSvc (GetService ×3) | 0.142 µs | 0.480 µs | **3.4×** | GetService hoisting |
-| cameraWork (prop chain) | 0.148 µs | 0.215 µs | **1.5×** | `camera.CFrame` hoisted (2 reads → 1) |
-| formatStats (template) | 0.170 µs | 0.175 µs | ~1× | String — no arithmetic |
-| buildKey (template) | 0.068 µs | 0.086 µs | **1.3×** | `--!native` |
+| serviceWork (GetService ×2) | 0.185 µs | 0.440 µs | **2.4×** | GetService hoisting — no `--!native` needed |
+| multiSvc (GetService ×3) | 0.142 µs | 0.480 µs | **3.4×** | GetService hoisting — no `--!native` needed |
+| cameraWork (prop chain) | 0.148 µs | 0.215 µs | **1.5×** | property chain hoisting — no `--!native` needed |
+| formatStats (template) | 0.170 µs | 0.175 µs | ~1× | string — no arithmetic |
+| buildKey (template) | 0.068 µs | 0.086 µs | **1.3×** | `--!native` + type annotations |
 
 ### What the transformer cannot help with
 

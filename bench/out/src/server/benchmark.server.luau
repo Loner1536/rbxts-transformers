@@ -1,13 +1,14 @@
 --!optimize 2
+--!strict
 
 -- Compiled with rotor v2.2.0
-
--- Runtime
-local TS = require(_ReplicatedStorage:WaitForChild("include"):WaitForChild("RuntimeLib"))
 
 -- Services
 local _ReplicatedStorage = game:GetService("ReplicatedStorage")
 local _Workspace = game:GetService("Workspace")
+
+-- Runtime
+local TS = require(_ReplicatedStorage:WaitForChild("include"):WaitForChild("RuntimeLib"))
 
 -- Imports
 local base = TS.import(script, _ReplicatedStorage, "shared", "fns-bare")
@@ -113,10 +114,10 @@ local function runSuite(fns)
 	end)
 end
 
-print("\n=== optimized (--!native + transformer) ===")
+print("\n=== with transformer (--!native + hoisting + annotations) ===")
 runSuite(opt)
-print("===========================================\n")
+print("===========================================================\n")
 task.wait(1)
-print("\n=== baseline (plain rotor, no transformer) ===")
+print("\n=== without transformer (--!native only) ===")
 runSuite(base)
-print("==============================================\n")
+print("==============================================================\n")

@@ -2,7 +2,6 @@ import type ts from "typescript";
 import type { PluginConfig } from "./config";
 import { nativePass } from "./passes/native";
 import { cachePass } from "./passes/cache";
-import { loopsPass } from "./passes/loops";
 import { annotatePass } from "./passes/annotate";
 
 export type { PluginConfig };
@@ -18,7 +17,6 @@ export default function(
         annotatePass(ts, program, sourceFile);
         let result = sourceFile;
         if (hoist) result = cachePass(ts, program, ctx, result);
-        result = loopsPass(ts, program, ctx, result);
         if (optimize || strict) result = nativePass(ts, ctx, result, optimize, strict);
         return result;
     };

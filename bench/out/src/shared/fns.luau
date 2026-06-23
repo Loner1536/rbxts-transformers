@@ -1,4 +1,5 @@
 --!optimize 2
+--!strict
 --!native
 
 -- Compiled with rotor v2.2.0
@@ -67,27 +68,8 @@ end
 local function sumWeighted(values: {number}, weights: {number}): number
 	local total = 0
 
-	do
-		local _len_values = #values
-
-		do
-			local i = 0
-			local _shouldIncrement = false
-
-			while true do
-				if _shouldIncrement then
-					i += 1
-				else
-					_shouldIncrement = true
-				end
-
-				if not (i < _len_values) then
-					break
-				end
-
-				total += values[i + 1] * weights[i + 1]
-			end
-		end
+	for i = 0, #values - 1 do
+		total += values[i + 1] * weights[i + 1]
 	end
 
 	return total
@@ -96,27 +78,8 @@ end
 local function dotProduct(a: {number}, b: {number}): number
 	local sum = 0
 
-	do
-		local _len_a = #a
-
-		do
-			local i = 0
-			local _shouldIncrement = false
-
-			while true do
-				if _shouldIncrement then
-					i += 1
-				else
-					_shouldIncrement = true
-				end
-
-				if not (i < _len_a) then
-					break
-				end
-
-				sum += a[i + 1] * b[i + 1]
-			end
-		end
+	for i = 0, #a - 1 do
+		sum += a[i + 1] * b[i + 1]
 	end
 
 	return sum
@@ -125,27 +88,8 @@ end
 local function norm(values: {number}): number
 	local sq = 0
 
-	do
-		local _len_values = #values
-
-		do
-			local i = 0
-			local _shouldIncrement = false
-
-			while true do
-				if _shouldIncrement then
-					i += 1
-				else
-					_shouldIncrement = true
-				end
-
-				if not (i < _len_values) then
-					break
-				end
-
-				sq += values[i + 1] * values[i + 1]
-			end
-		end
+	for i = 0, #values - 1 do
+		sq += values[i + 1] * values[i + 1]
 	end
 
 	return math.sqrt(sq)

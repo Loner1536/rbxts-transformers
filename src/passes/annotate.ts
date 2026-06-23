@@ -233,8 +233,8 @@ function organizePreamble(src: string): string {
 
     const out: string[] = [...shebang];
     if (header.length > 0) out.push("", ...header);
-    if (runtime.length > 0) out.push("", "-- Runtime", ...runtime);
     if (services.length > 0) out.push("", "-- Services", ...services);
+    if (runtime.length > 0) out.push("", "-- Runtime", ...runtime);
     for (const group of importGroups) {
         group.lines.sort(byLengthDesc);
         out.push("", group.label, ...group.lines);
