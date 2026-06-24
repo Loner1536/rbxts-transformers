@@ -1,6 +1,8 @@
 node_modules/
-dist/
-bench/out/
+**/node_modules/
+out/
+**/out/
+
 bench/*.rbxlx
 
 package-lock.json

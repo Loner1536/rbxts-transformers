@@ -1,18 +1,17 @@
 {
     "name": "rbxts-transform-boost",
-    "version": "1.2.1",
+    "version": "1.3.0",
     "description": "roblox-ts transformer: automatic --!native, GetService hoisting, property chain caching, loop bounds hoisting, and Luau type annotation injection",
-    "main": "dist/index.js",
-    "types": "dist/index.d.ts",
+    "main": "out/index.js",
+    "types": "out/index.d.ts",
     "files": [
-        "dist",
+        "out",
         "README.md"
     ],
     "scripts": {
         "build": "tsc",
-        "install": "cd bench && bun install",
-        "bench:rotor": "bun run build && cd bench && rotor build -p tsconfig.rotor.json --rojo rotor.project.json --verbose && rotor build -p tsconfig.notransform.rotor.json --rojo rotor.project.json --verbose",
-        "bench:roblox-ts": "bun run build && cd bench && bunx rbxtsc -p tsconfig.roblox-ts.json --rojo roblox-ts.project.json --verbose && bunx rbxtsc -p tsconfig.notransform.roblox-ts.json --rojo roblox-ts.project.json --verbose",
+        "bench:rotor": "bun run build && cd bench && rotor build -p tsconfig.rotor.json --rojo rotor.project.json  && rotor build -p tsconfig.notransform.rotor.json --rojo rotor.project.json",
+        "bench:roblox-ts": "bun run build && cd bench && bunx rbxtsc -p tsconfig.roblox-ts.json --rojo roblox-ts.project.json  && bunx rbxtsc -p tsconfig.notransform.roblox-ts.json --rojo roblox-ts.project.json",
         "bench:rbxlx:rotor": "bun run bench:rotor && cd bench && rojo build rotor.project.json -o benchmark-rotor.rbxlx",
         "bench:rbxlx:roblox-ts": "npm run bench:roblox-ts && cd bench && rojo build roblox-ts.project.json -o benchmark-roblox-ts.rbxlx"
     },

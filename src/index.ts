@@ -2,11 +2,11 @@ import type ts from "typescript";
 import type { PluginConfig } from "./config";
 import { nativePass } from "./passes/native";
 import { cachePass } from "./passes/cache";
+import { loopsPass } from "./passes/loops";
 import { annotatePass } from "./passes/annotate";
 import { createDebugger } from "./debug";
 
 export type { PluginConfig };
-
 
 export default function (
     program: ts.Program,
@@ -21,12 +21,25 @@ export default function (
 
         const rel = sourceFile.fileName.replace(process.cwd() + "/", "");
 
-        annotatePass(ts, program, sourceFile);
-        let result = sourceFile;
-        if (hoist) result = cachePass(ts, program, ctx, result);
-        if (optimize || strict) result = nativePass(ts, ctx, result, optimize, strict);
+        try {
+            annotatePass(ts, program, sourceFile);
+            let result = sourceFile;
+            let cached = 0;
 
-        dbg.file(rel, { /* populate from pass return values */ });
-        return result;
+            if (hoist) {
+                const cacheResult = cachePass(ts, program, ctx, result, dbg);
+                result = cacheResult.result;
+                cached = cacheResult.cached;
+                result = loopsPass(ts, program, ctx, result);
+            }
+
+            if (optimize || strict) result = nativePass(ts, ctx, result, optimize, strict);
+
+            dbg.file(rel, { cached });
+            return result;
+        } catch (err) {
+            dbg.error("transform", `${rel}: ${err instanceof Error ? err.message : String(err)} — file skipped, using original`);
+            return sourceFile;
+        }
     };
 }

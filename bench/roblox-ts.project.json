@@ -11,7 +11,13 @@
                 "$path": "out/roblox-ts/src/shared"
             },
             "include": {
-                "$path": "out/roblox-ts/include"
+                "$path": "out/roblox-ts/include",
+                "node_modules": {
+                    "$className": "Folder",
+                    "@rbxts": {
+                        "$path": "node_modules/@rbxts"
+                    }
+                }
             }
         }
     }

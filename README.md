@@ -4,7 +4,7 @@
 >
 > **What carried over:** Luau type annotation injection on function parameters for native codegen (primitives, Roblox value types, arrays).
 >
-> **What's new:** `--!optimize 2` on every file, `game:GetService()` hoisting to module-level locals, repeated property chain hoisting, `const` keyword for TypeScript `const` declarations, output formatting so compiled files look human-written.
+> **What's new:** `--!optimize 2` on every file, `game:GetService()` hoisting to module-level locals, repeated property chain hoisting, loop bounds hoisting, `const` keyword for TypeScript `const` declarations, output formatting so compiled files look human-written.
 >
 > **What's different:** The old package also annotated return types, local variable declarations, class methods, and user-defined interfaces/type aliases. Those are not yet in this package — they're planned. The old package also had reliability issues that this rewrite addresses.
 
@@ -38,7 +38,8 @@ npm install --save-dev rbxts-transform-boost
 |--------|------|---------|-------------|
 | `optimize` | `boolean` | `true` | Prepend `--!optimize 2` to every file that doesn't already have it |
 | `strict` | `boolean` | `true` | Prepend `--!strict` to every file that doesn't already have it |
-| `hoist` | `boolean` | `true` | Hoist `GetService` calls and repeated property reads to locals |
+| `hoist` | `boolean` | `true` | Hoist `GetService` calls, repeated property reads, and loop bounds to locals |
+| `verbose` | `boolean` | `false` | Log each transformed file during compilation |
 
 `--!native` is never auto-inserted. Add `//!native` at the top of your TypeScript file for hot paths you've profiled — the compiler preserves it.
 
@@ -84,7 +85,7 @@ end
 
 ### `const` for TypeScript `const` declarations
 
-TypeScript `const` declarations are emitted as Luau `const` (shipped in Roblox Studio March 2026). TypeScript `let` stays as `local`. Rotor-generated internal variables (`_cache0`, `_shouldIncrement`, etc.) are not affected.
+TypeScript `const` declarations are emitted as Luau `const` (shipped in Roblox Studio March 2026). TypeScript `let` stays as `local`. Transformer-generated internal variables (`_cache0`, `_shouldIncrement`, etc.) are not affected.
 
 ```typescript
 // TypeScript
@@ -204,6 +205,34 @@ end
 
 ---
 
+### Loop bounds hoisting
+
+`for` loops whose upper bound is `arr.size()` have the size hoisted to a local before the loop. This avoids calling `.size()` on every iteration check.
+
+```typescript
+// TypeScript source
+for (let i = 0; i < arr.size(); i++) {
+    process(arr[i]);
+}
+```
+
+```lua
+-- Without transformer
+for i = 0, arr:size() - 1 do
+    process(arr[i + 1])
+end
+```
+
+```lua
+-- With transformer
+const _len_arr: number = arr:size()
+for i = 0, _len_arr - 1 do
+    process(arr[i + 1])
+end
+```
+
+---
+
 ### Luau type annotation injection
 
 After the compiler writes `.luau` files, the transformer injects Luau type annotations on function parameters and return types. This lets the native compiler generate specialized code for numeric and Roblox value types.
@@ -229,7 +258,7 @@ local function dot(a: Vector3, b: Vector3): number
 end
 ```
 
-Supported types: `number`, `string`, `boolean`, `Vector3`, `Vector2`, `CFrame`, `UDim2`, `Color3`, `buffer`, `Instance`, `BasePart`, `Player`, `Camera`, `RunService`, `Players`, `Workspace`, and array forms (`{number}`, `{Vector3}`, etc.).
+Supported types: `number`, `string`, `boolean`, `Vector3`, `Vector2`, `Vector2int16`, `Vector3int16`, `CFrame`, `UDim`, `UDim2`, `Color3`, `BrickColor`, `TweenInfo`, `NumberRange`, `NumberSequence`, `ColorSequence`, `Rect`, `Region3`, `Ray`, `buffer`, `Instance`, `BasePart`, `Part`, `Model`, `Player`, `Camera`, `RunService`, `Players`, `Workspace`, and array forms (`{number}`, `{Vector3}`, etc.).
 
 ---
 
@@ -274,7 +303,7 @@ local data = TS.import(script, ...)
 - Before block starters (`do`/`while`/`for`/`if`) when preceded by a group of `local`/`const` assignments
 - At `const` → `local` transitions
 
-**`--!` directives** are sorted by length and separated from the rotor header comment with a blank line.
+**`--!` directives** are sorted by length and separated from the compiler header comment with a blank line.
 
 ---
 
@@ -314,10 +343,11 @@ Measured in Roblox Studio server context. 100,000 iterations per benchmark (10,0
 ## Development
 
 ```bash
-npm run build              # compile the transformer (tsc → dist/)
-npm run bench:build        # build the benchmark suite with transformer applied
-npm run bench:build:baseline  # build the baseline suite (no transformer)
-npm run bench:rbxlx        # produce bench/benchmark.rbxlx (both suites in one place)
+bun run build              # compile the transformer (tsc → out/)
+bun run bench:roblox-ts    # build with transformer via roblox-ts
+bun run bench:rotor        # build with transformer via rotor
+bun run bench:rbxlx:roblox-ts  # produce bench/benchmark-roblox-ts.rbxlx
+bun run bench:rbxlx:rotor      # produce bench/benchmark-rotor.rbxlx
 ```
 
-Open `bench/benchmark.rbxlx` in Roblox Studio and run the server. The optimized suite prints first, then the baseline suite.
+Open the `.rbxlx` file in Roblox Studio and run the server. The optimized suite prints first, then the baseline suite.

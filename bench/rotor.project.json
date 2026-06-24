@@ -11,7 +11,13 @@
                 "$path": "out/rotor/src/shared"
             },
             "include": {
-                "$path": "out/rotor/include"
+                "$path": "out/rotor/include",
+                "node_modules": {
+                    "$className": "Folder",
+                    "@rbxts": {
+                        "$path": "node_modules/@rbxts"
+                    }
+                }
             }
         }
     }
