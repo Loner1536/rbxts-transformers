@@ -5,7 +5,6 @@ import { cachePass } from "./passes/cache";
 import { loopsPass } from "./passes/loops";
 import { annotatePass } from "./passes/annotate";
 import { createDebugger } from "./debug";
-
 export type { PluginConfig };
 
 export default function (
@@ -17,8 +16,9 @@ export default function (
 
     return (ctx) => (sourceFile) => {
         if (sourceFile.fileName.endsWith("fns-bare.ts")) return sourceFile;
-
         const rel = sourceFile.fileName.replace(process.cwd() + "/", "");
+
+        const errors: string[] = [];
 
         try {
             annotatePass(ts, program, sourceFile);
@@ -26,18 +26,35 @@ export default function (
             let cached = 0;
 
             if (hoist) {
-                const cacheResult = cachePass(ts, program, ctx, result, dbg);
-                result = cacheResult.result;
-                cached = cacheResult.cached;
-                result = loopsPass(ts, program, ctx, result);
+                try {
+                    const cacheResult = cachePass(ts, program, ctx, result, dbg);
+                    result = cacheResult.result;
+                    cached = cacheResult.cached;
+                } catch (err) {
+                    errors.push(`cache: ${err instanceof Error ? err.message : String(err)}`);
+                }
+
+                try {
+                    result = loopsPass(ts, program, ctx, result);
+                } catch (err) {
+                    errors.push(`loops: ${err instanceof Error ? err.message : String(err)}`);
+                }
             }
 
-            if (optimize || strict) result = nativePass(ts, ctx, result, optimize, strict);
+            if (optimize || strict) {
+                try {
+                    result = nativePass(ts, ctx, result, optimize, strict);
+                } catch (err) {
+                    errors.push(`native: ${err instanceof Error ? err.message : String(err)}`);
+                }
+            }
 
-            dbg.file(rel, { cached });
+            dbg.file(rel, { cached, errors });
             return result;
         } catch (err) {
-            dbg.error("transform", `${rel}: ${err instanceof Error ? err.message : String(err)} — file skipped, using original`);
+            // Unrecoverable — whole file failed
+            const msg = err instanceof Error ? err.message : String(err);
+            dbg.file(rel, { cached: 0, errors: [`fatal: ${msg} — using original`] });
             return sourceFile;
         }
     };

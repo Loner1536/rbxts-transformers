@@ -1,103 +1,77 @@
 import type ts from "typescript";
 
-type Compiler = "roblox-ts" | "rotor";
-
-function detectCompiler(): Compiler {
-    for (const arg of process.argv) {
-        if (arg.includes("rotor")) return "rotor";
-    }
-    const script = process.env.npm_lifecycle_script ?? process.env._ ?? "";
-    if (script.includes("rotor")) return "rotor";
-    return "roblox-ts";
+export interface FunctionHoistInfo {
+    fnName: string;
+    hoisted: string[]; // e.g. ["Floor.CFrame!", "FloorOffset!"]
+    mutableSkips: string[]; // chains skipped due to mutation — useful to know
 }
 
-const RESET = "\x1b[0m";
-const DIM = "\x1b[2m";
-const CYAN = "\x1b[36m";
-const YELLOW = "\x1b[33m";
-const RED = "\x1b[31m";
-const GRAY = "\x1b[90m";
-
-function fmtStats(stats: FileStats, sep: string): string {
-    const parts: string[] = [];
-    if (stats.cached) parts.push(`${stats.cached} hoisted`);
-    if (stats.annotated) parts.push(`${stats.annotated} annotated`);
-    if (stats.promoted) parts.push(`${stats.promoted} promoted`);
-    return parts.join(sep);
+export interface Debugger {
+    // Called once per function that hoisted anything
+    hoistInfo(info: FunctionHoistInfo): void;
+    // Called once per file after all passes
+    file(rel: string, stats: { cached: number; errors: string[] }): void;
+    warn(pass: string, message: string): void;
+    error(pass: string, message: string): void;
 }
 
-export type FileStats = {
-    cached?: number;
-    annotated?: number;
-    promoted?: number;
-};
-
-export type Debugger = {
-    enabled: boolean;
-    compiler: Compiler;
-    file(file: string, stats: FileStats, ms?: number): void;
-    warn(pass: string, msg: string): void;
-    error(pass: string, msg: string): void;
-};
-
-export function createDebugger(_program: ts.Program, verbose: boolean): Debugger {
-    const compiler = detectCompiler();
-    const rotor = compiler === "rotor";
-
-    const totals = { files: 0, cached: 0, annotated: 0, promoted: 0 };
-    let summaryRegistered = false;
-    let firstVerboseLine = true;
-
-    function emit(line: string) {
-        if (line) process.stderr.write(line + "\n");
-    }
-
-    function registerSummary() {
-        if (summaryRegistered) return;
-        summaryRegistered = true;
-    }
+export function createDebugger(program: ts.Program, verboseEnabled: boolean): Debugger {
+    // Accumulate per-file function hoist info between hoistInfo() and file() calls
+    const pendingFnInfos: FunctionHoistInfo[] = [];
 
     return {
-        enabled: verbose,
-        compiler,
-
-        file(file, stats, ms?) {
-            totals.files++;
-            totals.cached += stats.cached ?? 0;
-            totals.annotated += stats.annotated ?? 0;
-            totals.promoted += stats.promoted ?? 0;
-
-            if (rotor) registerSummary();
-
-            if (!verbose) return;
-
-            // roblox-ts: break cleanly off "running transformers.." on first line only
-            if (!rotor && firstVerboseLine) {
-                firstVerboseLine = false;
-                process.stderr.write("\n");
-            }
-
-            const detail = fmtStats(stats, ", ");
-            const statStr = detail ? ` ( ${detail} )` : "";
-            const msStr = ms !== undefined ? ` ( ${ms} ms )` : "";
-            emit(`running boost: ${file}${statStr}${msStr}`);
+        hoistInfo(info) {
+            pendingFnInfos.push(info);
         },
 
-        warn(pass, msg) {
-            if (!verbose && !rotor) return;
-            if (rotor) {
-                emit(`  ${YELLOW}⚠${RESET}  boost: ${GRAY}${pass}${RESET}: ${msg}`);
-            } else {
-                emit(`${YELLOW}[boost] warn${RESET} ${GRAY}${pass}${RESET}: ${msg}`);
+        file(rel, { cached, errors }) {
+            const fnInfos = pendingFnInfos.splice(0);
+
+            // Always print the file line
+            // Format: boost: path/to/file.ts — 14 hoisted (Fn: Chain!, Chain2 | Fn2: Chain3)
+            // Or just: boost: path/to/file.ts  (if nothing hoisted)
+            if (cached === 0 && errors.length === 0) {
+                console.log(`boost: ${rel}`);
+                return;
             }
+
+            const parts: string[] = [];
+
+            if (cached > 0) {
+                parts.push(`${cached} hoisted`);
+
+                if (verboseEnabled && fnInfos.length > 0) {
+                    // Per-function breakdown, compact
+                    // e.g. RunCollision: Floor.CFrame!, Speed.X | AfterUpdateHook: Speed, Flags
+                    const fnParts = fnInfos.map(info => {
+                        // Strip common prefix for readability: Client.Ground.Floor.CFrame → Floor.CFrame
+                        // Actually keep full chain — it's more useful for debugging
+                        const chains = info.hoisted.join(", ");
+                        const label = info.fnName === "<anonymous>"
+                            ? `<anon:${info.hoisted[0]?.split(".").pop() ?? "?"}>`
+                            : info.fnName;
+                        const mutPart = info.mutableSkips.length > 0
+                            ? ` [mut: ${info.mutableSkips.join(", ")}]`
+                            : "";
+                        return `${label}: ${chains}${mutPart}`;
+                    });
+                    parts.push(`(${fnParts.join(" | ")})`);
+                }
+            }
+
+            if (errors.length > 0) {
+                parts.push(`${errors.length} error${errors.length > 1 ? "s" : ""}: ${errors.join(", ")}`);
+            }
+
+            console.log(`boost: ${rel} — ${parts.join("  ")}`);
         },
 
-        error(pass, msg) {
-            if (rotor) {
-                emit(`  ${RED}✖${RESET}  boost: ${GRAY}${pass}${RESET}: ${msg}`);
-            } else {
-                emit(`${RED}[boost] error${RESET} ${GRAY}${pass}${RESET}: ${msg}`);
-            }
+        warn(pass, message) {
+            console.warn(`[boost:${pass}] warn: ${message}`);
+        },
+
+        error(pass, message) {
+            console.error(`[boost] error ${pass}: ${message}`);
         },
     };
 }

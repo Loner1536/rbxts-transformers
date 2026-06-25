@@ -1,6 +1,6 @@
 import type ts from "typescript";
 import { chainKey, walk, walkShallow, isAssignmentTarget } from "../util";
-import type { Debugger } from "../debug";
+import type { Debugger, FunctionHoistInfo } from "../debug";
 
 const SKIP_ROOTS = new Set([
     "math", "string", "table", "bit32", "os", "buffer",
@@ -14,6 +14,21 @@ const SKIP_ROOTS = new Set([
     "pairs", "ipairs", "next", "unpack", "pcall", "xpcall",
     "setmetatable", "getmetatable", "rawget", "rawset", "rawequal",
 ]);
+
+/**
+ * Minimum uses required to justify hoisting, based on chain depth.
+ *
+ * Deeper chains save more ops per substitution so earn caching sooner:
+ *   1 dot  (Foo.Bar)           → ≥ 4 uses
+ *   2 dots (Foo.Bar.Baz)       → ≥ 3 uses
+ *   3+ dots                    → ≥ 2 uses
+ */
+function minUsesForKey(key: string): number {
+    const dots = (key.match(/\./g) ?? []).length;
+    if (dots <= 1) return 4;
+    if (dots === 2) return 3;
+    return 2;
+}
 
 function isGetServiceCall(ts: typeof import("typescript"), node: ts.Node): node is ts.CallExpression {
     if (!ts.isCallExpression(node)) return false;
@@ -31,6 +46,98 @@ function getServiceName(ts: typeof import("typescript"), call: ts.CallExpression
     return arg.text;
 }
 
+function isNullableType(ts: typeof import("typescript"), type: ts.Type): boolean {
+    if (type.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Null)) return true;
+    if (type.isUnion()) {
+        return type.types.some(t => !!(t.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Null)));
+    }
+    return false;
+}
+
+/**
+ * Safe wrapper around checker.getTypeAtLocation. Returns undefined if the node
+ * is synthetic/detached or if the call throws. Synthetic nodes produced by
+ * earlier passes have no source position — calling getTypeAtLocation on them
+ * crashes with "Cannot read properties of undefined (reading 'kind')".
+ */
+function safeGetType(
+    ts: typeof import("typescript"),
+    checker: ts.TypeChecker,
+    node: ts.Node,
+): ts.Type | undefined {
+    try {
+        const sf = node.getSourceFile();
+        if (!sf || node.pos < 0) return undefined;
+        return checker.getTypeAtLocation(node);
+    } catch {
+        return undefined;
+    }
+}
+
+/**
+ * Get the *declared* (un-narrowed) type of any expression by going through
+ * its symbol's declaration rather than the usage site.
+ *
+ * Critical for cases like `Client.Ground.Floor` where at the call site the
+ * control-flow-narrowed type is `BasePart` (inside an `if (Floor)` guard),
+ * but the declared type is `BasePart | undefined`. We must check the declared
+ * type to know whether hoisting *above* that guard is safe.
+ */
+function getDeclaredType(
+    ts: typeof import("typescript"),
+    checker: ts.TypeChecker,
+    node: ts.Expression,
+): ts.Type | undefined {
+    try {
+        const symbol = checker.getSymbolAtLocation(node);
+        if (!symbol) return safeGetType(ts, checker, node);
+        const decls = symbol.getDeclarations();
+        if (!decls || decls.length === 0) return safeGetType(ts, checker, node);
+        return checker.getTypeAtLocation(decls[0]);
+    } catch {
+        return undefined;
+    }
+}
+
+/**
+ * Checks whether ANY segment of the property access chain has a nullable
+ * declared type. Uses declared types (not narrowed usage-site types) for
+ * every segment so that control-flow narrowing inside guards doesn't hide
+ * real nullability from us.
+ *
+ * Returns a short reason string if nullable, undefined if safe to hoist.
+ *
+ * Callers wrap each intermediate segment with `!` (createNonNullExpression)
+ * so the full chain becomes e.g. Client.Ground.Floor!.CFrame! instead of
+ * Client.Ground.Floor.CFrame! which TS rejects.
+ */
+function nullableSegmentReason(
+    ts: typeof import("typescript"),
+    checker: ts.TypeChecker,
+    node: ts.PropertyAccessExpression,
+): string | undefined {
+    let cur: ts.Expression = node;
+    while (ts.isPropertyAccessExpression(cur)) {
+        const declared = getDeclaredType(ts, checker, cur);
+        if (declared && isNullableType(ts, declared)) {
+            return `'${chainKey(ts, cur) ?? "?"}' is possibly undefined`;
+        }
+        try {
+            const sym = checker.getSymbolAtLocation(cur);
+            if (sym && sym.flags & ts.SymbolFlags.Optional) {
+                return `'${chainKey(ts, cur) ?? "?"}' is an optional property`;
+            }
+        } catch { /* synthetic node */ }
+        cur = cur.expression;
+    }
+    const rootDeclared = getDeclaredType(ts, checker, cur);
+    if (rootDeclared && isNullableType(ts, rootDeclared)) {
+        const name = ts.isIdentifier(cur) ? cur.text : "?";
+        return `root '${name}' is possibly undefined`;
+    }
+    return undefined;
+}
+
 export function cachePass(
     ts: typeof import("typescript"),
     program: ts.Program,
@@ -42,7 +149,6 @@ export function cachePass(
     const checker = program.getTypeChecker();
     let cached = 0;
 
-    // --- GetService hoisting ---
     const services = new Map<string, string>();
     walk(ts, sourceFile, node => {
         if (!node || !isGetServiceCall(ts, node)) return;
@@ -59,7 +165,6 @@ export function cachePass(
     };
 
     let result = ts.visitEachChild(sourceFile, serviceVisitor, ctx) as ts.SourceFile;
-
     if (services.size > 0) {
         cached += services.size;
         const hoistDecls = Array.from(services.entries()).map(([name, localName]) =>
@@ -86,17 +191,16 @@ export function cachePass(
         result = factory.updateSourceFile(result, [...hoistDecls, ...Array.from(result.statements)]);
     }
 
-    // --- Property chain hoisting within functions ---
-    const chainResult = hoistPropertyChains(ts, result, factory, ctx, checker, dbg);
+    const chainResult = hoistPropertyChains(ts, sourceFile, result, factory, ctx, checker, dbg);
     result = chainResult.result;
     cached += chainResult.cached;
-
     return { result, cached };
 }
 
 function hoistPropertyChains(
     ts: typeof import("typescript"),
-    sourceFile: ts.SourceFile,
+    originalSourceFile: ts.SourceFile,
+    transformedSourceFile: ts.SourceFile,
     factory: ts.NodeFactory,
     ctx: ts.TransformationContext,
     checker: ts.TypeChecker,
@@ -104,20 +208,51 @@ function hoistPropertyChains(
 ): { result: ts.SourceFile; cached: number } {
     let totalCached = 0;
 
-    const visitor = (node: ts.Node): ts.Node => {
+    type HoistEntry = { toHoist: Map<string, string>; nullableKeys: Set<string>; mutableSkips: string[] };
+    const hoistMap = new Map<string, HoistEntry>();
+
+    const analysisVisitor = (node: ts.Node): void => {
         if (
             ts.isFunctionDeclaration(node) || ts.isFunctionExpression(node) ||
             ts.isArrowFunction(node) || ts.isMethodDeclaration(node)
         ) {
-            const { fn, cached } = hoistInFunction(ts, node as ts.FunctionLikeDeclaration, factory, ctx, checker, dbg);
-            totalCached += cached;
-            return fn;
+            const fn = node as ts.FunctionLikeDeclaration;
+            const result = analyseFunction(ts, fn, checker, dbg);
+            if (result.toHoist.size > 0) {
+                hoistMap.set(`${fn.pos}:${fn.end}`, {
+                    toHoist: result.toHoist,
+                    nullableKeys: result.nullableKeys,
+                    mutableSkips: result.mutableSkips,
+                });
+                totalCached += result.toHoist.size;
+            }
         }
-        return ts.visitEachChild(node, visitor, ctx);
+        ts.forEachChild(node, analysisVisitor);
+    };
+    ts.forEachChild(originalSourceFile, analysisVisitor);
+
+    if (hoistMap.size === 0) return { result: transformedSourceFile, cached: 0 };
+
+    const applyVisitor = (node: ts.Node): ts.Node => {
+        if (
+            ts.isFunctionDeclaration(node) || ts.isFunctionExpression(node) ||
+            ts.isArrowFunction(node) || ts.isMethodDeclaration(node)
+        ) {
+            const fn = node as ts.FunctionLikeDeclaration;
+            const entry = hoistMap.get(`${fn.pos}:${fn.end}`);
+            if (entry && fn.body && ts.isBlock(fn.body)) {
+                const fnName = fn.name && ts.isIdentifier(fn.name) ? fn.name.text : "<anonymous>";
+                const { fn: updated } = applyHoisting(
+                    ts, fn, entry.toHoist, entry.nullableKeys, factory, ctx, dbg, fnName,
+                );
+                return updated;
+            }
+        }
+        return ts.visitEachChild(node, applyVisitor, ctx);
     };
 
     return {
-        result: ts.visitEachChild(sourceFile, visitor, ctx) as ts.SourceFile,
+        result: ts.visitEachChild(transformedSourceFile, applyVisitor, ctx) as ts.SourceFile,
         cached: totalCached,
     };
 }
@@ -127,7 +262,6 @@ function collectMutatedIdentifiers(
     body: ts.Block,
 ): Set<string> {
     const mutated = new Set<string>();
-
     walk(ts, body, node => {
         if (ts.isBinaryExpression(node)) {
             const op = node.operatorToken.kind;
@@ -148,25 +282,21 @@ function collectMutatedIdentifiers(
                 op === ts.SyntaxKind.AmpersandAmpersandEqualsToken ||
                 op === ts.SyntaxKind.BarBarEqualsToken ||
                 op === ts.SyntaxKind.QuestionQuestionEqualsToken;
-
             if (isAssign && ts.isIdentifier(node.left)) {
                 mutated.add(node.left.text);
             }
         }
-
         if (
             (ts.isPrefixUnaryExpression(node) || ts.isPostfixUnaryExpression(node)) &&
             ts.isIdentifier(node.operand)
         ) {
             mutated.add((node.operand as ts.Identifier).text);
         }
-
         if (ts.isVariableDeclarationList(node) && (node.flags & ts.NodeFlags.Let)) {
             for (const decl of node.declarations) {
                 if (ts.isIdentifier(decl.name)) mutated.add(decl.name.text);
             }
         }
-
         if (
             (ts.isForOfStatement(node) || ts.isForInStatement(node)) &&
             ts.isIdentifier((node as ts.ForOfStatement | ts.ForInStatement).initializer)
@@ -175,21 +305,14 @@ function collectMutatedIdentifiers(
             mutated.add(init.text);
         }
     });
-
     return mutated;
 }
 
-/**
- * Collect every identifier name declared anywhere inside the body (deep),
- * including destructuring patterns. Hoisting a chain whose root is any local
- * would place the cache declaration above the root's own declaration.
- */
 function collectLocalDeclaredIdentifiers(
     ts: typeof import("typescript"),
     body: ts.Block,
 ): Set<string> {
     const locals = new Set<string>();
-
     function collectBindingName(name: ts.BindingName): void {
         if (ts.isIdentifier(name)) {
             locals.add(name.text);
@@ -203,21 +326,15 @@ function collectLocalDeclaredIdentifiers(
             }
         }
     }
-
     walk(ts, body, node => {
         if (!ts.isVariableDeclarationList(node)) return;
         for (const decl of node.declarations) {
             collectBindingName(decl.name);
         }
     });
-
     return locals;
 }
 
-/**
- * Returns true when the given property access expression is the direct callee
- * of a call expression. Hoisting it would detach the method from its `this`.
- */
 function isCalleeOfCallExpression(
     ts: typeof import("typescript"),
     node: ts.PropertyAccessExpression,
@@ -233,26 +350,24 @@ function chainHasBenefit(
     fn: ts.FunctionLikeDeclaration,
 ): boolean {
     const root = key.split(".")[0];
-
     if (SKIP_ROOTS.has(root)) return false;
-
     const params = new Set(
         fn.parameters
             .map(p => ts.isIdentifier(p.name) ? p.name.text : null)
             .filter((n): n is string => n !== null)
     );
-
     if (params.has(root)) {
         const param = fn.parameters.find(p => ts.isIdentifier(p.name) && p.name.text === root);
         if (param) {
-            const type = checker.getTypeAtLocation(param);
-            const typeName = checker.typeToString(type);
-            if (/^(number|string|boolean|undefined|null|void|never|unknown|any)$/.test(typeName)) return false;
-            if (typeName.includes("=>") || typeName.startsWith("(")) return false;
+            const type = safeGetType(ts, checker, param);
+            if (type) {
+                const typeName = checker.typeToString(type);
+                if (/^(number|string|boolean|undefined|null|void|never|unknown|any)$/.test(typeName)) return false;
+                if (typeName.includes("=>") || typeName.startsWith("(")) return false;
+            }
         }
         return true;
     }
-
     try {
         let foundLocal = false;
         if (fn.body && ts.isBlock(fn.body)) {
@@ -269,18 +384,17 @@ function chainHasBenefit(
     }
 }
 
-function hoistInFunction(
+function analyseFunction(
     ts: typeof import("typescript"),
     fn: ts.FunctionLikeDeclaration,
-    factory: ts.NodeFactory,
-    ctx: ts.TransformationContext,
     checker: ts.TypeChecker,
     dbg: Debugger,
-): { fn: ts.FunctionLikeDeclaration; cached: number } {
-    if (!fn.body || !ts.isBlock(fn.body)) return { fn, cached: 0 };
+): { toHoist: Map<string, string>; nullableKeys: Set<string>; mutableSkips: string[] } {
+    const empty = { toHoist: new Map<string, string>(), nullableKeys: new Set<string>(), mutableSkips: [] as string[] };
+    if (!fn.body || !ts.isBlock(fn.body)) return empty;
 
+    const fnName = fn.name && ts.isIdentifier(fn.name) ? fn.name.text : "<anonymous>";
     const mutatedIds = collectMutatedIdentifiers(ts, fn.body);
-    // All locals declared anywhere in the body (including destructuring, deep)
     const localIds = collectLocalDeclaredIdentifiers(ts, fn.body);
 
     function chainHasMutableSegment(key: string): boolean {
@@ -292,44 +406,78 @@ function hoistInFunction(
     }
 
     const counts = new Map<string, number>();
+    const nodeMap = new Map<string, ts.PropertyAccessExpression>();
     const usedAsCallee = new Set<string>();
 
-    // Shallow walk: only count chains that belong to THIS function scope,
-    // not to nested arrow functions / callbacks
     walkShallow(ts, fn.body, node => {
         if (!node || !ts.isPropertyAccessExpression(node)) return;
         const key = chainKey(ts, node);
         if (!key || !key.includes(".")) return;
         if (isAssignmentTarget(ts, node)) return;
         counts.set(key, (counts.get(key) ?? 0) + 1);
-        if (isCalleeOfCallExpression(ts, node)) {
-            usedAsCallee.add(key);
-        }
+        if (!nodeMap.has(key)) nodeMap.set(key, node);
+        if (isCalleeOfCallExpression(ts, node)) usedAsCallee.add(key);
     });
 
     const toHoist = new Map<string, string>();
+    const nullableKeys = new Set<string>();
+    const mutableSkips: string[] = [];
     let counter = 0;
 
     const candidates = Array.from(counts.entries())
-        .filter(([, count]) => count >= 2)
+        .filter(([key, count]) => count >= minUsesForKey(key))
         .sort((a, b) => b[0].length - a[0].length);
 
-    for (const [key] of candidates) {
+    const hoisted: string[] = [];
+
+    for (const [key, count] of candidates) {
         const root = key.split(".")[0];
-        // Skip chains that touch a mutable variable
-        if (chainHasMutableSegment(key)) continue;
-        // Skip chains whose root is any local declared in this body (TS2448/TS2454)
+
+        if (chainHasMutableSegment(key)) {
+            mutableSkips.push(key);
+            continue;
+        }
         if (localIds.has(root)) continue;
-        // Skip chains ever used as a direct method callee (TS2684)
         if (usedAsCallee.has(key)) continue;
         if (!chainHasBenefit(ts, checker, key, fn)) continue;
+
         const alreadyCovered = Array.from(toHoist.keys()).some(h => h.startsWith(key + "."));
         if (alreadyCovered) continue;
+
+        const repNode = nodeMap.get(key);
+        const nullableReason = repNode ? nullableSegmentReason(ts, checker, repNode) : undefined;
+        if (nullableReason) nullableKeys.add(key);
+
+        const suffix = nullableReason ? `!` : ``;
+        hoisted.push(`${key}${suffix}`);
         toHoist.set(key, `_cache${counter++}`);
     }
 
-    if (toHoist.size === 0) return { fn, cached: 0 };
+    if (toHoist.size > 0) {
+        const label = fnName === "<anonymous>"
+            ? `<anon:${hoisted[0]?.split(".").pop() ?? "?"}>`
+            : fnName;
+        dbg.hoistInfo({
+            fnName: label,
+            hoisted,
+            mutableSkips,
+        });
+    }
 
+    return { toHoist, nullableKeys, mutableSkips };
+}
+
+function applyHoisting(
+    ts: typeof import("typescript"),
+    fn: ts.FunctionLikeDeclaration,
+    toHoist: Map<string, string>,
+    nullableKeys: Set<string>,
+    factory: ts.NodeFactory,
+    ctx: ts.TransformationContext,
+    dbg: Debugger,
+    fnName: string,
+): { fn: ts.FunctionLikeDeclaration; cached: number } {
+    if (!fn.body || !ts.isBlock(fn.body)) return { fn, cached: 0 };
     try {
         const chainVisitor = (node: ts.Node): ts.Node => {
             if (ts.isPropertyAccessExpression(node)) {
@@ -345,16 +493,28 @@ function hoistInFunction(
 
         const hoistStmts = Array.from(toHoist.entries()).map(([key, localName]) => {
             const parts = key.split(".");
+            const isNullable = nullableKeys.has(key);
             let expr: ts.Expression = factory.createIdentifier(parts[0]);
             for (let i = 1; i < parts.length; i++) {
                 expr = factory.createPropertyAccessExpression(expr, parts[i]);
+                // Assert after each intermediate segment so TS doesn't complain that
+                // e.g. `Client.Ground.Floor` is possibly undefined before `.CFrame`.
+                if (isNullable && i < parts.length - 1) {
+                    expr = factory.createNonNullExpression(expr);
+                }
+            }
+            // Assert the full expression too (covers the final segment).
+            if (isNullable) {
+                expr = factory.createNonNullExpression(expr);
             }
             return factory.createVariableStatement(
                 undefined,
                 factory.createVariableDeclarationList(
                     [factory.createVariableDeclaration(
                         factory.createIdentifier(localName),
-                        undefined, undefined, expr,
+                        undefined,
+                        undefined,
+                        expr,
                     )],
                     ts.NodeFlags.Const,
                 ),
@@ -371,7 +531,6 @@ function hoistInFunction(
 
         return { fn: updated, cached: toHoist.size };
     } catch (err) {
-        const fnName = fn.name && ts.isIdentifier(fn.name) ? fn.name.text : "<anonymous>";
         dbg.warn("cachePass", `skipped hoisting in ${fnName}: ${err instanceof Error ? err.message : String(err)}`);
         return { fn, cached: 0 };
     }

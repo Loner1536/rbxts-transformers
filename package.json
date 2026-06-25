@@ -3,13 +3,16 @@
     "private": true,
     "workspaces": [
         "transformer",
-        "slither"
+        "slither",
+        "sonic"
     ],
     "scripts": {
         "build": "bun run --cwd transformer build",
-        "slither:rotor": "bun run build && cd slither && bunx rotor build",
-        "slither:roblox-ts": "bun run build && cd slither && bunx --bun rbxtsc",
-        "bench:rotor": "bun run build && cd bench && bunx rotor build -p tsconfig.rotor.json --rojo rotor.project.json && bunx rotor build -p tsconfig.notransform.rotor.json --rojo rotor.project.json",
+        "sonic:rotor": "bun run build && cd sonic && rotor build",
+        "sonic:roblox-ts": "bun run build && cd sonic && bunx rbxtsc",
+        "slither:rotor": "bun run build && cd slither && rotor build",
+        "slither:roblox-ts": "bun run build && cd slither && bunx rbxtsc",
+        "bench:rotor": "bun run build && cd bench && rotor build -p tsconfig.rotor.json --rojo rotor.project.json && rotor build -p tsconfig.notransform.rotor.json --rojo rotor.project.json",
         "bench:roblox-ts": "bun run build && cd bench && bunx rbxtsc -p tsconfig.roblox-ts.json --rojo roblox-ts.project.json && bunx rbxtsc -p tsconfig.notransform.roblox-ts.json --rojo roblox-ts.project.json",
         "bench:rbxlx:rotor": "bun run bench:rotor && cd bench && rojo build rotor.project.json -o benchmark-rotor.rbxlx",
         "bench:rbxlx:roblox-ts": "bun run bench:roblox-ts && cd bench && rojo build roblox-ts.project.json -o benchmark-roblox-ts.rbxlx"
