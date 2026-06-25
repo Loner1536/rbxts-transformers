@@ -4,7 +4,7 @@
 >
 > **What carried over:** Luau type annotation injection on function parameters for native codegen (primitives, Roblox value types, arrays).
 >
-> **What's new:** `--!optimize 2` on every file, `game:GetService()` hoisting to module-level locals, repeated property chain hoisting, loop bounds hoisting, `const` keyword for TypeScript `const` declarations, output formatting so compiled files look human-written.
+> **What's new:** `--!optimize` on every file, `game:GetService()` hoisting to module-level locals, repeated property chain hoisting, loop bounds hoisting, `const` keyword for TypeScript `const` declarations, output formatting so compiled files look human-written.
 >
 > **What's different:** The old package also annotated return types, local variable declarations, class methods, and user-defined interfaces/type aliases. Those are not yet in this package — they're planned. The old package also had reliability issues that this rewrite addresses.
 
@@ -24,6 +24,7 @@ npm install --save-dev rbxts-transform-boost
             {
                 "transform": "rbxts-transform-boost",
                 "optimize": true,
+                "optimizeLevel": 2,
                 "verbose": true,
                 "strict": true,
                 "hoist": true
@@ -36,8 +37,9 @@ npm install --save-dev rbxts-transform-boost
 ### Options
 
 | Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `optimize` | `boolean` | `true` | Prepend `--!optimize 2` to every file that doesn't already have it |
+|--------|------|---------|--------------|
+| `optimize` | `boolean` | `false` | Prepend `--!optimize <optimizeLevel>` to every file that doesn't already have it |
+| `optimizeLevel` | `0 \| 1 \| 2` | `2` | The level used in the `--!optimize` directive when `optimize` is enabled |
 | `strict` | `boolean` | `true` | Prepend `--!strict` to every file that doesn't already have it |
 | `hoist` | `boolean` | `true` | Hoist `GetService` calls, repeated property reads, and loop bounds to locals |
 | `verbose` | `boolean` | `false` | Log each transformed file during compilation |
@@ -55,9 +57,9 @@ export function integrate(pos: Vector3, vel: Vector3, acc: Vector3, dt: number) 
 
 ## What it does
 
-### `--!optimize 2` — always on top
+### `--!optimize` — opt-in performance directive
 
-Every file gets `--!optimize 2` prepended if it doesn't already have it. Roblox already runs all scripts at optimization level 2 in live games, but the directive makes Studio behaviour match production and signals intent.
+Set `optimize: true` to prepend `--!optimize <optimizeLevel>` to every file that doesn't already have it (off by default — enable it once you're ready to match Studio behaviour to production). `optimizeLevel` controls the level (`0`, `1`, or `2`) and defaults to `2`. Roblox already runs all scripts at optimization level 2 in live games, but the directive makes Studio behaviour match production and signals intent.
 
 ```lua
 -- Without transformer
@@ -70,7 +72,7 @@ end
 ```
 
 ```lua
--- With transformer
+-- With transformer (optimize: true, optimizeLevel: 2)
 --!optimize 2
 
 local function encodeFixed(buf: buffer, offset: number, value: number, scale: number): number
@@ -128,8 +130,6 @@ end
 
 ```lua
 -- With transformer
---!optimize 2
-
 -- Services
 local _RunService = game:GetService("RunService")
 local _Players = game:GetService("Players")
@@ -332,6 +332,8 @@ Measured in Roblox Studio server context. 100,000 iterations per benchmark (10,0
 | cameraWork (prop chain) | 0.185 µs | 0.218 µs | **1.2×** | `camera.CFrame` hoisted (2 reads → 1) |
 | formatStats (template) | 0.191 µs | 0.187 µs | ~1× | string — no arithmetic |
 | buildKey (template) | 0.085 µs | 0.079 µs | ~1× | — |
+
+> Benchmark figures above were measured with `optimize` enabled. With `optimize` now defaulting to `false`, set `"optimize": true` in your plugin config to reproduce these numbers.
 
 ### What the transformer cannot help with
 
