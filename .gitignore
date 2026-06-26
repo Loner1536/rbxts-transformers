@@ -13,3 +13,6 @@ bun.lock
 
 *_Store
 *.Store
+
+scripts
+dump.*

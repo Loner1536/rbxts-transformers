@@ -1,19 +1,19 @@
 {
-    "name": "rbxts-transform-boost-workspace",
-    "private": true,
-    "workspace": [
-        "transformer",
-        "bench"
-    ],
-    "scripts": {
-        "build": "bun run --cwd transformer build",
-        "bench:rotor": "bun run build && cd bench && rotor build -p tsconfig.rotor.json --rojo rotor.project.json && rotor build -p tsconfig.notransform.rotor.json --rojo rotor.project.json",
-        "bench:roblox-ts": "bun run build && cd bench && bunx rbxtsc -p tsconfig.roblox-ts.json --rojo roblox-ts.project.json && bunx rbxtsc -p tsconfig.notransform.roblox-ts.json --rojo roblox-ts.project.json",
-        "bench:rbxlx:rotor": "bun run bench:rotor && cd bench && rojo build rotor.project.json -o benchmark-rotor.rbxlx",
-        "bench:rbxlx:roblox-ts": "bun run bench:roblox-ts && cd bench && rojo build roblox-ts.project.json -o benchmark-roblox-ts.rbxlx"
-    },
-    "devDependencies": {
-        "@types/node": "^26.0.0",
-        "typescript": "5.5.3"
-    }
+  "name": "rbxts-transform-boost-workspace",
+  "private": true,
+  "workspaces": [
+    "transformer",
+    "bench"
+  ],
+  "scripts": {
+    "build": "bun run --cwd transformer build",
+    "bench:rotor": "bun run build && cd bench && rotor build -p tsconfig.rotor.json --rojo rotor.project.json && rotor build -p tsconfig.notransform.rotor.json --rojo rotor.project.json",
+    "bench:roblox-ts": "bun run build && cd bench && bunx rbxtsc -p tsconfig.roblox-ts.json --rojo roblox-ts.project.json && bunx rbxtsc -p tsconfig.notransform.roblox-ts.json --rojo roblox-ts.project.json",
+    "bench:rbxlx:rotor": "bun run bench:rotor && cd bench && rojo build rotor.project.json -o benchmark-rotor.rbxlx",
+    "bench:rbxlx:roblox-ts": "bun run bench:roblox-ts && cd bench && rojo build roblox-ts.project.json -o benchmark-roblox-ts.rbxlx"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.0",
+    "typescript": "5.5.3"
+  }
 }
