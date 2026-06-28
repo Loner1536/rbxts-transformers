@@ -6,10 +6,9 @@
     "bench"
   ],
   "scripts": {
-    "build": "bun run --cwd packages/rbxts-transform-boost build && bun run --cwd packages/rbxts-transform-luau build && bun run --cwd packages/rbxts-transform-native build",
+    "build": "bun run --cwd packages/rbxts-transform-boost build && bun run --cwd packages/rbxts-transform-luau build",
     "build:boost": "bun run --cwd packages/rbxts-transform-boost build",
     "build:luau": "bun run --cwd packages/rbxts-transform-luau build",
-    "build:native": "bun run --cwd packages/rbxts-transform-native build",
     "bench:rotor": "bun run build && cd bench/rotor && rotor build -p tsconfig.json --rojo default.project.json && rotor build -p tsconfig.notransform.json --rojo default.project.json",
     "bench:roblox-ts": "bun run build && cd bench/roblox-ts && bunx rbxtsc -p tsconfig.json --rojo default.project.json && bunx rbxtsc -p tsconfig.notransform.json --rojo default.project.json",
     "bench:rbxlx:rotor": "bun run bench:rotor && cd bench/rotor && rojo build default.project.json -o benchmark-rotor.rbxlx",

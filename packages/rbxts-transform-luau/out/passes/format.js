@@ -23,6 +23,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.injectTypeAnnotations = injectTypeAnnotations;
 exports.stripUselessBlockComments = stripUselessBlockComments;
 exports.fixBlockCommentOpeners = fixBlockCommentOpeners;
 exports.organizePreamble = organizePreamble;
@@ -41,6 +42,27 @@ function byLengthDesc(a, b) {
 }
 function escapeRegex(s) {
     return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function injectTypeAnnotations(src, types) {
+    if (types.size === 0)
+        return src;
+    for (const [fnName, ann] of types) {
+        if (ann.params.every(p => p === null) && ann.ret === null)
+            continue;
+        const re = new RegExp(`(local function ${escapeRegex(fnName)}\\()([^)]*)(\\.\\.\\.)?(\\))(?:\\s*:\\s*[^\\r\\n]+)?`);
+        src = src.replace(re, (_m, open, rawParams, vararg, close) => {
+            const names = rawParams.split(",").map((s) => s.trim()).filter(Boolean);
+            const annotated = names.map((name, i) => {
+                const bare = name.split(":")[0].trim();
+                const typ = ann.params[i];
+                return typ ? `${bare}: ${typ}` : bare;
+            });
+            if (vararg)
+                annotated.push("...");
+            return `${open}${annotated.join(", ")}${close}${ann.ret ? `: ${ann.ret}` : ""}`;
+        });
+    }
+    return src;
 }
 function stripUselessBlockComments(src) {
     const NOISE_TAGS = new Set([
@@ -379,15 +401,15 @@ function injectJsDocFromSidecar(src, sidecar) {
                     ? rawRet.slice(1, -1).split(",")[0]?.trim() ?? ""
                     : rawRet;
                 if (doc.deprecated !== undefined)
-                    out.push(`${indent}---@deprecated${doc.deprecated ? ` ${doc.deprecated}` : ""}`);
+                    out.push(`${indent}--- @deprecated${doc.deprecated ? ` ${doc.deprecated}` : ""}`);
                 for (const desc of doc.desc)
                     out.push(`${indent}--- ${desc}`);
                 for (const [paramName, paramDesc] of doc.params) {
                     const type = paramTypes.get(paramName);
-                    out.push(`${indent}---@param ${paramName}${type ? ` ${type}` : ""}${paramDesc ? ` ${paramDesc}` : ""}`);
+                    out.push(`${indent}--- @param ${paramName}${type ? ` ${type}` : ""}${paramDesc ? ` ${paramDesc}` : ""}`);
                 }
                 if (doc.returns) {
-                    out.push(`${indent}---@return${retType ? ` ${retType}` : ""} ${doc.returns}`);
+                    out.push(`${indent}--- @return${retType ? ` ${retType}` : ""} ${doc.returns}`);
                 }
             }
         }
@@ -479,17 +501,17 @@ function convertJsDocComments(src) {
             }
             const indent = funcMatch[1];
             if (deprecatedMsg !== undefined)
-                out.push(`${indent}---@deprecated${deprecatedMsg ? ` ${deprecatedMsg}` : ""}`);
+                out.push(`${indent}--- @deprecated${deprecatedMsg ? ` ${deprecatedMsg}` : ""}`);
             for (const desc of descLines) {
                 out.push(`${indent}--- ${desc}`);
             }
             for (const { name, desc } of paramTags) {
                 const type = paramTypes.get(name);
-                out.push(`${indent}---@param ${name}${type ? ` ${type}` : ""}${desc ? ` — ${desc}` : ""}`);
+                out.push(`${indent}--- @param ${name}${type ? ` ${type}` : ""}${desc ? ` ${desc}` : ""}`);
             }
             if (returnDesc) {
                 const retType = retTypes[0] ?? "";
-                out.push(`${indent}---@return${retType ? ` ${retType}` : ""} — ${returnDesc}`);
+                out.push(`${indent}--- @return${retType ? ` ${retType}` : ""} ${returnDesc}`);
             }
             i = j; // skip blank lines, let function line emit normally
             continue;
@@ -509,7 +531,7 @@ function applyDirectives(src, strict, optimizeLevel) {
     return src;
 }
 const writingFiles = new Set();
-function formatFile(luauPath, strict, optimizeLevel, sidecar = new Map()) {
+function formatFile(luauPath, strict, optimizeLevel, sidecar = new Map(), types = new Map()) {
     if (writingFiles.has(luauPath))
         return;
     if (!fs.existsSync(luauPath))
@@ -527,6 +549,7 @@ function formatFile(luauPath, strict, optimizeLevel, sidecar = new Map()) {
     apply(hoistGetService);
     apply(fixBlockCommentOpeners);
     apply(organizePreamble);
+    apply(s => injectTypeAnnotations(s, types));
     apply(convertJsDocComments);
     apply(s => injectJsDocFromSidecar(s, sidecar));
     apply(stripUselessBlockComments);

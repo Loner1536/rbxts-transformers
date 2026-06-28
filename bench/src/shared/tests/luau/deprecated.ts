@@ -44,7 +44,7 @@ export function current(x: number): number {
 }
 
 /**
- * Has JSDoc but no @deprecated — ---@deprecated must NOT appear.
+ * Has JSDoc but no deprecated tag — should pass through cleanly.
  * @param x The value.
  * @returns Doubled.
  */

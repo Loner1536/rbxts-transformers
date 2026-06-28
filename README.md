@@ -7,8 +7,7 @@ A collection of TypeScript transformer plugins for [roblox-ts](https://roblox-ts
 | Package | npm | Description |
 |---|---|---|
 | [`rbxts-transform-boost`](packages/rbxts-transform-boost) | [![npm](https://img.shields.io/npm/v/rbxts-transform-boost)](https://www.npmjs.com/package/rbxts-transform-boost) | GetService hoisting, property chain caching, loop bounds hoisting, `const` promotion |
-| [`rbxts-transform-luau`](packages/rbxts-transform-luau) | [![npm](https://img.shields.io/npm/v/rbxts-transform-luau)](https://www.npmjs.com/package/rbxts-transform-luau) | Preamble formatting, TS.import type hints, JSDoc conversion, comment cleanup, `--!strict`/`--!optimize` |
-| [`rbxts-transform-native`](packages/rbxts-transform-native) | [![npm](https://img.shields.io/npm/v/rbxts-transform-native)](https://www.npmjs.com/package/rbxts-transform-native) | Luau type annotations for `//!native` files |
+| [`rbxts-transform-luau`](packages/rbxts-transform-luau) | [![npm](https://img.shields.io/npm/v/rbxts-transform-luau)](https://www.npmjs.com/package/rbxts-transform-luau) | Preamble formatting, TS.import type hints, JSDoc conversion, Luau type annotations, `--!strict`/`--!optimize` |
 
 Each package is independent — use any combination, in any order.
 
@@ -19,7 +18,7 @@ Each package is independent — use any combination, in any order.
 Install whichever packages you need:
 
 ```bash
-npm install --save-dev rbxts-transform-boost rbxts-transform-luau rbxts-transform-native
+npm install --save-dev rbxts-transform-boost rbxts-transform-luau
 ```
 
 Add them to your `tsconfig.json` plugins:
@@ -36,10 +35,6 @@ Add them to your `tsconfig.json` plugins:
         "transform": "rbxts-transform-luau",
         "strict": true,
         "optimize": 2
-      },
-      {
-        "transform": "rbxts-transform-native",
-        "verbose": true
       }
     ]
   }
@@ -52,7 +47,7 @@ Add them to your `tsconfig.json` plugins:
 
 ```bash
 bun install           # install all workspace dependencies
-bun run build         # build all three packages
+bun run build         # build all packages
 bun run bench:rotor   # compile bench/ with rotor
 bun run bench:roblox-ts  # compile bench/ with roblox-ts
 ```

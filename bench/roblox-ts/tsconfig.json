@@ -1,37 +1,30 @@
 {
-    "extends": "../tsconfig.json",
-    "compilerOptions": {
-        "rootDir": "../src",
-        "outDir": "./out/src",
-        "typeRoots": ["./node_modules/@rbxts"],
-        "plugins": [
-            {
-                "transform": "rbxts-transform-boost",
-                "hoist": true,
-                "verbose": true
-            },
-            {
-                "transform": "rbxts-transform-native",
-                "verbose": true
-            },
-            {
-                "transform": "rbxts-transform-luau",
-                "strict": true,
-                "optimize": 2,
-                "verbose": true
-            }
-        ]
-    },
-    "include": [
-        "../src/server/**/*.ts",
-        "../src/shared/tests/**/*.ts",
-        "../src/shared/fns.ts"
-    ],
-    "exclude": [
-        "node_modules",
-        "out"
-    ],
-    "rbxts": {
-        "includePath": "out/include"
-    }
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "../src",
+    "outDir": "./out/src",
+    "typeRoots": ["./node_modules/@rbxts"],
+    "plugins": [
+      {
+        "transform": "rbxts-transform-boost",
+        "hoist": true,
+        "verbose": true
+      },
+      {
+        "transform": "rbxts-transform-luau",
+        "strict": true,
+        "optimize": 2,
+        "verbose": true
+      }
+    ]
+  },
+  "include": [
+    "../src/server/**/*.ts",
+    "../src/shared/tests/**/*.ts",
+    "../src/shared/fns.ts"
+  ],
+  "exclude": ["node_modules", "out"],
+  "rbxts": {
+    "includePath": "out/include"
+  }
 }
