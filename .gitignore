@@ -16,5 +16,7 @@ bun.lock
 *_Store
 *.Store
 
+.nvim.lua
+
 scripts
 dump.*
