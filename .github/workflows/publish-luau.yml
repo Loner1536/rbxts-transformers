@@ -1,9 +1,9 @@
-name: Publish to npm
+name: Publish rbxts-transform-luau
 
 on:
   push:
     tags:
-      - "v*"
+      - "luau-v*"
   workflow_dispatch:
 
 jobs:
@@ -18,12 +18,11 @@ jobs:
           registry-url: https://registry.npmjs.org
 
       - run: bun install
-        working-directory: transformer
 
       - run: bun run build
-        working-directory: transformer
+        working-directory: packages/rbxts-transform-luau
 
       - run: npm publish --access public
-        working-directory: transformer
+        working-directory: packages/rbxts-transform-luau
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -9,12 +9,8 @@
     "build": "bun run --cwd packages/rbxts-transform-boost build && bun run --cwd packages/rbxts-transform-luau build",
     "build:boost": "bun run --cwd packages/rbxts-transform-boost build",
     "build:luau": "bun run --cwd packages/rbxts-transform-luau build",
-    "bench:rotor": "bun run build && cd bench/rotor && rotor build -p tsconfig.json --rojo default.project.json && rotor build -p tsconfig.notransform.json --rojo default.project.json",
-    "bench:roblox-ts": "bun run build && cd bench/roblox-ts && bunx rbxtsc -p tsconfig.json --rojo default.project.json && bunx rbxtsc -p tsconfig.notransform.json --rojo default.project.json",
-    "bench:rbxlx:rotor": "bun run bench:rotor && cd bench/rotor && rojo build default.project.json -o benchmark-rotor.rbxlx",
-    "bench:rbxlx:roblox-ts": "bun run bench:roblox-ts && cd bench/roblox-ts && rojo build default.project.json -o benchmark-roblox-ts.rbxlx",
-    "sourcemap": "cd bench/rotor && rojo sourcemap default.project.json -o sourcemap.json",
-    "sourcemap:watch": "cd bench/rotor && rojo sourcemap default.project.json -o sourcemap.json --watch"
+    "bench:roblox-ts": "bun run build && cd bench/roblox-ts && bunx rbxtsc -p tsconfig.json && bunx rbxtsc -p tsconfig.notransform.json && rojo build default.project.json -o benchmark.rbxlx",
+    "bench:rotor": "bun run build && cd bench/rotor && rotor build -p tsconfig.json && rotor build -p tsconfig.notransform.json && rojo build default.project.json -o benchmark.rbxlx"
   },
   "devDependencies": {
     "@types/node": "^26.0.0",

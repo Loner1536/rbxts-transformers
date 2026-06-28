@@ -1,12 +1,12 @@
 node_modules/
 **/node_modules
 
-# out/
-# **/out/
-
-bench/rotor/out/
+packages/*/out/
 bench/roblox-ts/out/
-bench/*.rbxlx
+bench/rotor/out/
+
+bench/**/*.rbxlx
+bench/**/sourcemap.json
 
 package-lock.json
 bench/package-lock.json

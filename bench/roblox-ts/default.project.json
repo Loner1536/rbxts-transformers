@@ -11,7 +11,7 @@
                 "$path": "out/src/shared"
             },
             "include": {
-                "$path": "include",
+                "$path": "out/include",
                 "node_modules": {
                     "$className": "Folder",
                     "@rbxts": {
