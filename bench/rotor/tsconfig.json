@@ -14,8 +14,7 @@
             {
                 "transform": "rbxts-transform-luau",
                 "strict": true,
-                "optimize": true,
-                "optimizeLevel": 2,
+                "optimize": 2,
                 "verbose": true
             },
             {

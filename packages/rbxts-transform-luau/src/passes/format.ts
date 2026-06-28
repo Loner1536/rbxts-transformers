@@ -326,11 +326,11 @@ export function castTsImports(src: string): string {
     });
 }
 
-export function applyDirectives(src: string, strict: boolean, optimize: boolean, optimizeLevel: 0 | 1 | 2): string {
+export function applyDirectives(src: string, strict: boolean, optimizeLevel: false | 0 | 1 | 2): string {
     if (strict && !src.includes("--!strict")) {
         src = "--!strict\n" + src;
     }
-    if (optimize && !src.includes("--!optimize")) {
+    if (optimizeLevel !== false && !src.includes("--!optimize")) {
         src = `--!optimize ${optimizeLevel}\n` + src;
     }
     return src;
@@ -341,8 +341,7 @@ const writingFiles = new Set<string>();
 export function formatFile(
     luauPath: string,
     strict: boolean,
-    optimize: boolean,
-    optimizeLevel: 0 | 1 | 2,
+    optimizeLevel: false | 0 | 1 | 2,
 ): void {
     if (writingFiles.has(luauPath)) return;
     if (!fs.existsSync(luauPath)) return;
@@ -355,7 +354,7 @@ export function formatFile(
         if (next !== src) { src = next; changed = true; }
     };
 
-    apply(s => applyDirectives(s, strict, optimize, optimizeLevel));
+    apply(s => applyDirectives(s, strict, optimizeLevel));
     apply(hoistGetService);
     apply(fixBlockCommentOpeners);
     apply(stripUselessBlockComments);

@@ -61,7 +61,7 @@ let finalizeRegistered = false;
 function flushPending() {
     for (const [, meta] of pending) {
         try {
-            (0, format_1.formatFile)(meta.outPath, meta.strict, meta.optimize, meta.optimizeLevel);
+            (0, format_1.formatFile)(meta.outPath, meta.strict, meta.optimizeLevel);
         }
         catch {
             // silently skip files that fail — they stay as-is
@@ -76,10 +76,8 @@ function registerFinalizer() {
     process.on("exit", flushPending);
 }
 function default_1(program, config = {}) {
-    const { strict = true, optimize = false, optimizeLevel: rawLevel = 2, verbose = false, } = config;
-    const optimizeLevel = [0, 1, 2].includes(rawLevel)
-        ? rawLevel
-        : 2;
+    const { strict = true, optimize = false, verbose = false } = config;
+    const optimizeLevel = optimize === false ? false : [0, 1, 2].includes(optimize) ? optimize : 2;
     // Watch mode: flush the previous run's pending files before starting this one.
     flushPending();
     registerFinalizer();
@@ -87,7 +85,7 @@ function default_1(program, config = {}) {
     return (_ctx) => (sourceFile) => {
         const outPath = outPathForSource(sourceFile, program);
         if (outPath) {
-            pending.set(outPath, { outPath, strict, optimize, optimizeLevel, verbose });
+            pending.set(outPath, { outPath, strict, optimizeLevel, verbose });
             if (verbose) {
                 const rel = outDir ? path.relative(outDir, outPath) : outPath;
                 console.log(`luau: ${rel}`);

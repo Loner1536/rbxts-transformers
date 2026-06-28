@@ -350,17 +350,17 @@ function castTsImports(src) {
         return `${indent}local ${varName}; if false then ${varName} = require(${path}) else ${varName} = ${call} :: any end`;
     });
 }
-function applyDirectives(src, strict, optimize, optimizeLevel) {
+function applyDirectives(src, strict, optimizeLevel) {
     if (strict && !src.includes("--!strict")) {
         src = "--!strict\n" + src;
     }
-    if (optimize && !src.includes("--!optimize")) {
+    if (optimizeLevel !== false && !src.includes("--!optimize")) {
         src = `--!optimize ${optimizeLevel}\n` + src;
     }
     return src;
 }
 const writingFiles = new Set();
-function formatFile(luauPath, strict, optimize, optimizeLevel) {
+function formatFile(luauPath, strict, optimizeLevel) {
     if (writingFiles.has(luauPath))
         return;
     if (!fs.existsSync(luauPath))
@@ -374,7 +374,7 @@ function formatFile(luauPath, strict, optimize, optimizeLevel) {
             changed = true;
         }
     };
-    apply(s => applyDirectives(s, strict, optimize, optimizeLevel));
+    apply(s => applyDirectives(s, strict, optimizeLevel));
     apply(hoistGetService);
     apply(fixBlockCommentOpeners);
     apply(stripUselessBlockComments);

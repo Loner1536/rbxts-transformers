@@ -34,8 +34,7 @@ function commonRoot(files: readonly string[]): string | undefined {
 type FileMeta = {
     outPath: string;
     strict: boolean;
-    optimize: boolean;
-    optimizeLevel: 0 | 1 | 2;
+    optimizeLevel: false | 0 | 1 | 2;
     verbose: boolean;
 };
 
@@ -45,7 +44,7 @@ let finalizeRegistered = false;
 function flushPending(): void {
     for (const [, meta] of pending) {
         try {
-            formatFile(meta.outPath, meta.strict, meta.optimize, meta.optimizeLevel);
+            formatFile(meta.outPath, meta.strict, meta.optimizeLevel);
         } catch {
             // silently skip files that fail — they stay as-is
         }
@@ -63,16 +62,8 @@ export default function (
     program: ts.Program,
     config: PluginConfig = {},
 ): ts.TransformerFactory<ts.SourceFile> {
-    const {
-        strict = true,
-        optimize = false,
-        optimizeLevel: rawLevel = 2,
-        verbose = false,
-    } = config;
-
-    const optimizeLevel = ([0, 1, 2] as const).includes(rawLevel as 0 | 1 | 2)
-        ? (rawLevel as 0 | 1 | 2)
-        : 2;
+    const { strict = true, optimize = false, verbose = false } = config;
+    const optimizeLevel: false | 0 | 1 | 2 = optimize === false ? false : ([0, 1, 2] as const).includes(optimize as 0|1|2) ? optimize : 2;
 
     // Watch mode: flush the previous run's pending files before starting this one.
     flushPending();
@@ -83,7 +74,7 @@ export default function (
     return (_ctx) => (sourceFile) => {
         const outPath = outPathForSource(sourceFile, program);
         if (outPath) {
-            pending.set(outPath, { outPath, strict, optimize, optimizeLevel, verbose });
+            pending.set(outPath, { outPath, strict, optimizeLevel, verbose });
             if (verbose) {
                 const rel = outDir ? path.relative(outDir, outPath) : outPath;
                 console.log(`luau: ${rel}`);

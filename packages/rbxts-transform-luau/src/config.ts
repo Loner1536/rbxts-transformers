@@ -4,12 +4,9 @@ export interface PluginConfig {
     strict?: boolean;
 
     // Prepend --!optimize <level> to every emitted file.
+    // Set to 0, 1, or 2 to enable at that level. false to disable.
     // Default: false
-    optimize?: boolean;
-
-    // The optimization level for --!optimize. Valid values: 0, 1, 2.
-    // Default: 2
-    optimizeLevel?: 0 | 1 | 2;
+    optimize?: false | 0 | 1 | 2;
 
     // Print per-file processing info to the console during compilation.
     // Default: false
