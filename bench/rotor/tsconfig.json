@@ -21,7 +21,6 @@
             {
                 "transform": "rbxts-transform-native",
                 "types": true,
-                "dluau": true,
                 "verbose": true
             }
         ]

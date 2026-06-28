@@ -162,11 +162,11 @@ function registerFinalizer() {
 function default_1(program, config = {}) {
     const { hoist = true, verbose = false } = config;
     const dbg = (0, debug_1.createDebugger)(program, verbose);
+    const outDir = program.getCompilerOptions().outDir;
     // Watch mode: flush previous run before starting this one.
     flushPending();
     registerFinalizer();
     return (_ctx) => (sourceFile) => {
-        const rel = sourceFile.fileName.replace(process.cwd() + "/", "");
         const errors = [];
         let cached = 0;
         // Always queue for post-emit — roblox-ts emits its own GetService calls
@@ -174,6 +174,7 @@ function default_1(program, config = {}) {
         const outPath = outPathForSource(sourceFile, program);
         if (outPath && hoist)
             pendingPaths.add(outPath);
+        const rel = outPath && outDir ? path.relative(outDir, outPath) : sourceFile.fileName;
         if (!hoist) {
             dbg.file(rel, { cached: 0, errors: [] });
             return sourceFile;

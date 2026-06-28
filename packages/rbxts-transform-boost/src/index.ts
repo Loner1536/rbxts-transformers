@@ -134,13 +134,13 @@ export default function (
 ): ts.TransformerFactory<ts.SourceFile> {
     const { hoist = true, verbose = false } = config;
     const dbg = createDebugger(program, verbose);
+    const outDir = program.getCompilerOptions().outDir;
 
     // Watch mode: flush previous run before starting this one.
     flushPending();
     registerFinalizer();
 
     return (_ctx) => (sourceFile) => {
-        const rel = sourceFile.fileName.replace(process.cwd() + "/", "");
         const errors: string[] = [];
         let cached = 0;
 
@@ -148,6 +148,7 @@ export default function (
         // in the runtime require and TS.import lines after our AST pass finishes.
         const outPath = outPathForSource(sourceFile, program);
         if (outPath && hoist) pendingPaths.add(outPath);
+        const rel = outPath && outDir ? path.relative(outDir, outPath) : sourceFile.fileName;
 
         if (!hoist) {
             dbg.file(rel, { cached: 0, errors: [] });

@@ -31,13 +31,13 @@ function commonRoot(files: readonly string[]): string | undefined {
     return root.join(path.sep) || undefined;
 }
 
-const pending = new Map<string, { sidecar: FileSidecar; injectTypes: boolean; dluau: boolean }>();
+const pending = new Map<string, { sidecar: FileSidecar; injectTypes: boolean }>();
 let finalizeRegistered = false;
 
 function flushPending(): void {
     for (const [outPath, meta] of pending) {
         try {
-            applyAnnotations(outPath, meta.sidecar, meta.injectTypes, meta.dluau);
+            applyAnnotations(outPath, meta.sidecar, meta.injectTypes);
         } catch {
             // silently skip — file stays as-is
         }
@@ -55,7 +55,8 @@ export default function (
     program: ts.Program,
     config: PluginConfig = {},
 ): ts.TransformerFactory<ts.SourceFile> {
-    const { types: injectTypes = true, dluau = false, verbose = false } = config;
+    const { types: injectTypes = true, verbose = false } = config;
+    const outDir = program.getCompilerOptions().outDir;
 
     // Watch mode: flush previous run before starting this one.
     flushPending();
@@ -66,20 +67,20 @@ export default function (
         if (!outPath) return sourceFile;
 
         const sidecar = collectSidecar(ts, program, sourceFile);
-        pending.set(outPath, { sidecar, injectTypes, dluau });
+        if (!sidecar.native) return sourceFile;
+
+        pending.set(outPath, { sidecar, injectTypes });
 
         if (verbose) {
-            const rel = path.relative(process.cwd(), sourceFile.fileName);
-            const parts: string[] = [];
-            if (sidecar.native) parts.push("--!native");
+            const rel = outDir ? path.relative(outDir, outPath) : outPath;
+            const parts: string[] = ["--!native"];
             if (injectTypes) {
                 const fnCount = sidecar.fns.size;
                 const constCount = sidecar.consts.size;
                 if (fnCount > 0) parts.push(`${fnCount} fn${fnCount !== 1 ? "s" : ""}`);
                 if (constCount > 0) parts.push(`${constCount} const${constCount !== 1 ? "s" : ""}`);
             }
-            if (dluau) parts.push(".d.luau");
-            console.log(`native: ${rel}${parts.length > 0 ? " — " + parts.join(", ") : ""}`);
+            console.log(`native: ${rel} — ${parts.join(", ")}`);
         }
 
         return sourceFile;

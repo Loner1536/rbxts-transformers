@@ -65,7 +65,7 @@ let finalizeRegistered = false;
 function flushPending() {
     for (const [outPath, meta] of pending) {
         try {
-            (0, annotate_1.applyAnnotations)(outPath, meta.sidecar, meta.injectTypes, meta.dluau);
+            (0, annotate_1.applyAnnotations)(outPath, meta.sidecar, meta.injectTypes);
         }
         catch {
             // silently skip — file stays as-is
@@ -80,7 +80,8 @@ function registerFinalizer() {
     process.on("exit", flushPending);
 }
 function default_1(program, config = {}) {
-    const { types: injectTypes = true, dluau = false, verbose = false } = config;
+    const { types: injectTypes = true, verbose = false } = config;
+    const outDir = program.getCompilerOptions().outDir;
     // Watch mode: flush previous run before starting this one.
     flushPending();
     registerFinalizer();
@@ -89,12 +90,12 @@ function default_1(program, config = {}) {
         if (!outPath)
             return sourceFile;
         const sidecar = (0, annotate_1.collectSidecar)(typescript_1.default, program, sourceFile);
-        pending.set(outPath, { sidecar, injectTypes, dluau });
+        if (!sidecar.native)
+            return sourceFile;
+        pending.set(outPath, { sidecar, injectTypes });
         if (verbose) {
-            const rel = path.relative(process.cwd(), sourceFile.fileName);
-            const parts = [];
-            if (sidecar.native)
-                parts.push("--!native");
+            const rel = outDir ? path.relative(outDir, outPath) : outPath;
+            const parts = ["--!native"];
             if (injectTypes) {
                 const fnCount = sidecar.fns.size;
                 const constCount = sidecar.consts.size;
@@ -103,9 +104,7 @@ function default_1(program, config = {}) {
                 if (constCount > 0)
                     parts.push(`${constCount} const${constCount !== 1 ? "s" : ""}`);
             }
-            if (dluau)
-                parts.push(".d.luau");
-            console.log(`native: ${rel}${parts.length > 0 ? " — " + parts.join(", ") : ""}`);
+            console.log(`native: ${rel} — ${parts.join(", ")}`);
         }
         return sourceFile;
     };

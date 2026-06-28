@@ -83,12 +83,13 @@ function default_1(program, config = {}) {
     // Watch mode: flush the previous run's pending files before starting this one.
     flushPending();
     registerFinalizer();
+    const outDir = program.getCompilerOptions().outDir;
     return (_ctx) => (sourceFile) => {
         const outPath = outPathForSource(sourceFile, program);
         if (outPath) {
             pending.set(outPath, { outPath, strict, optimize, optimizeLevel, verbose });
             if (verbose) {
-                const rel = path.relative(process.cwd(), sourceFile.fileName);
+                const rel = outDir ? path.relative(outDir, outPath) : outPath;
                 console.log(`luau: ${rel}`);
             }
         }

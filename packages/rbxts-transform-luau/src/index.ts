@@ -78,12 +78,14 @@ export default function (
     flushPending();
     registerFinalizer();
 
+    const outDir = program.getCompilerOptions().outDir;
+
     return (_ctx) => (sourceFile) => {
         const outPath = outPathForSource(sourceFile, program);
         if (outPath) {
             pending.set(outPath, { outPath, strict, optimize, optimizeLevel, verbose });
             if (verbose) {
-                const rel = path.relative(process.cwd(), sourceFile.fileName);
+                const rel = outDir ? path.relative(outDir, outPath) : outPath;
                 console.log(`luau: ${rel}`);
             }
         }
