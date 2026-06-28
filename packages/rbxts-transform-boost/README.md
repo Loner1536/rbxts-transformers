@@ -70,6 +70,18 @@ local function compute()
     const scale = 0.5
 ```
 
+## Benchmarks
+
+Measured in Roblox Studio server context, 100,000 iterations per benchmark. All suites use `//!native`.
+
+| Benchmark | With | Without | Speedup | Driver |
+|---|---|---|---|---|
+| cross (V3 manual) | 0.024 µs | 0.072 µs | **3.0×** | 6× field hoisting |
+| lerpVec3 (V3 manual) | 0.026 µs | 0.061 µs | **2.3×** | 3× field hoisting |
+| multiSvc (GetService ×3) | 0.154 µs | 0.505 µs | **3.3×** | GetService hoisting |
+| serviceWork (GetService ×2) | 0.243 µs | 0.481 µs | **2.0×** | GetService hoisting |
+| cameraWork (prop chain) | 0.185 µs | 0.218 µs | **1.2×** | `camera.CFrame` hoisted |
+
 ## Installation
 
 ```bash

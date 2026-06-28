@@ -48,22 +48,6 @@ Add them to your `tsconfig.json` plugins:
 
 ---
 
-## Benchmarks
-
-Measured in Roblox Studio server context. 100,000 iterations per benchmark. All suites use `//!native`.
-
-| Benchmark | With | Without | Speedup | Driver |
-|---|---|---|---|---|
-| integrate (Verlet) | 0.058 µs | 0.071 µs | **1.2×** | type annotations |
-| dot (V3 manual) | 0.025 µs | 0.046 µs | **1.8×** | type annotations |
-| cross (V3 manual) | 0.024 µs | 0.072 µs | **3.0×** | 6× field hoisting + types |
-| lerpVec3 (V3 manual) | 0.026 µs | 0.061 µs | **2.3×** | 3× field hoisting + types |
-| serviceWork (GetService ×2) | 0.243 µs | 0.481 µs | **2.0×** | GetService hoisting |
-| multiSvc (GetService ×3) | 0.154 µs | 0.505 µs | **3.3×** | GetService hoisting |
-| cameraWork (prop chain) | 0.185 µs | 0.218 µs | **1.2×** | `camera.CFrame` hoisted |
-
----
-
 ## Development
 
 ```bash
