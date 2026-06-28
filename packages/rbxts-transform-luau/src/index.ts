@@ -61,10 +61,11 @@ function registerFinalizer(): void {
 
 function jsDocText(comment: ts.JSDoc["comment"]): string {
     if (!comment) return "";
-    if (typeof comment === "string") return comment;
-    return (comment as ts.NodeArray<ts.JSDocComment>)
+    if (typeof comment === "string") return comment.trim().replace(/^—\s*/, "");
+    const raw = (comment as ts.NodeArray<ts.JSDocComment>)
         .map(c => ("text" in c ? (c as { text: string }).text : ""))
         .join("");
+    return raw.trim().replace(/^—\s*/, "");
 }
 
 function collectJsDoc(ts: typeof import("typescript"), sourceFile: ts.SourceFile): Map<string, FnDoc> {

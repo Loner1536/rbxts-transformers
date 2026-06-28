@@ -470,11 +470,11 @@ export function convertJsDocComments(src: string): string {
             }
             for (const { name, desc } of paramTags) {
                 const type = paramTypes.get(name);
-                out.push(`${indent}---@param ${name}${type ? ` ${type}` : ""}${desc ? ` — ${desc}` : ""}`);
+                out.push(`${indent}---@param ${name}${type ? ` ${type}` : ""}${desc ? ` ${desc}` : ""}`);
             }
             if (returnDesc) {
                 const retType = retTypes[0] ?? "";
-                out.push(`${indent}---@return${retType ? ` ${retType}` : ""} — ${returnDesc}`);
+                out.push(`${indent}---@return${retType ? ` ${retType}` : ""} ${returnDesc}`);
             }
 
             i = j; // skip blank lines, let function line emit normally
