@@ -10,7 +10,8 @@
         "allowSyntheticDefaultImports": true,
         "forceConsistentCasingInFileNames": true,
         "typeRoots": ["./node_modules/@rbxts"],
-        "types": ["types"]
+        "types": ["types"],
+        "skipLibCheck": true
     },
     "exclude": ["out", "node_modules"]
 }

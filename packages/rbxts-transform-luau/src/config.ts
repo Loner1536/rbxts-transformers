@@ -8,6 +8,12 @@ export interface PluginConfig {
     // Default: false
     optimize?: false | 0 | 1 | 2;
 
+    // Inject Luau type annotations into compiled function signatures using the
+    // TypeScript type checker. Covers any type that maps to a known Luau type
+    // (primitives, Roblox value types, arrays, LuaTuple multi-returns).
+    // Default: true
+    annotate?: boolean;
+
     // Print per-file processing info to the console during compilation.
     // Default: false
     verbose?: boolean;

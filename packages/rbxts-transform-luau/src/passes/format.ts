@@ -8,6 +8,32 @@ function escapeRegex(s: string): string {
     return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+export type FnTypes = {
+    params: Array<string | null>;
+    ret: string | null;
+};
+
+export function injectTypeAnnotations(src: string, types: Map<string, FnTypes>): string {
+    if (types.size === 0) return src;
+    for (const [fnName, ann] of types) {
+        if (ann.params.every(p => p === null) && ann.ret === null) continue;
+        const re = new RegExp(
+            `(local function ${escapeRegex(fnName)}\\()([^)]*)(\\.\\.\\.)?(\\))(?:\\s*:\\s*[^\\r\\n]+)?`,
+        );
+        src = src.replace(re, (_m, open: string, rawParams: string, vararg: string | undefined, close: string) => {
+            const names = rawParams.split(",").map((s: string) => s.trim()).filter(Boolean);
+            const annotated = names.map((name: string, i: number) => {
+                const bare = name.split(":")[0].trim();
+                const typ = ann.params[i];
+                return typ ? `${bare}: ${typ}` : bare;
+            });
+            if (vararg) annotated.push("...");
+            return `${open}${annotated.join(", ")}${close}${ann.ret ? `: ${ann.ret}` : ""}`;
+        });
+    }
+    return src;
+}
+
 export function stripUselessBlockComments(src: string): string {
     const NOISE_TAGS = new Set([
         "@param", "@returns", "@return", "@throws", "@deprecated",
@@ -505,6 +531,7 @@ export function formatFile(
     strict: boolean,
     optimizeLevel: false | 0 | 1 | 2,
     sidecar: Map<string, FnDoc> = new Map(),
+    types: Map<string, FnTypes> = new Map(),
 ): void {
     if (writingFiles.has(luauPath)) return;
     if (!fs.existsSync(luauPath)) return;
@@ -521,6 +548,7 @@ export function formatFile(
     apply(hoistGetService);
     apply(fixBlockCommentOpeners);
     apply(organizePreamble);
+    apply(s => injectTypeAnnotations(s, types));
     apply(convertJsDocComments);
     apply(s => injectJsDocFromSidecar(s, sidecar));
     apply(stripUselessBlockComments);
