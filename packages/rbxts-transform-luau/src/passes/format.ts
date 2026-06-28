@@ -386,14 +386,14 @@ export function injectJsDocFromSidecar(src: string, sidecar: Map<string, FnDoc>)
                     ? rawRet.slice(1, -1).split(",")[0]?.trim() ?? ""
                     : rawRet;
 
-                if (doc.deprecated !== undefined) out.push(`${indent}---@deprecated${doc.deprecated ? ` ${doc.deprecated}` : ""}`);
+                if (doc.deprecated !== undefined) out.push(`${indent}--- @deprecated${doc.deprecated ? ` ${doc.deprecated}` : ""}`);
                 for (const desc of doc.desc) out.push(`${indent}--- ${desc}`);
                 for (const [paramName, paramDesc] of doc.params) {
                     const type = paramTypes.get(paramName);
-                    out.push(`${indent}---@param ${paramName}${type ? ` ${type}` : ""}${paramDesc ? ` ${paramDesc}` : ""}`);
+                    out.push(`${indent}--- @param ${paramName}${type ? ` ${type}` : ""}${paramDesc ? ` ${paramDesc}` : ""}`);
                 }
                 if (doc.returns) {
-                    out.push(`${indent}---@return${retType ? ` ${retType}` : ""} ${doc.returns}`);
+                    out.push(`${indent}--- @return${retType ? ` ${retType}` : ""} ${doc.returns}`);
                 }
             }
         }
@@ -490,17 +490,17 @@ export function convertJsDocComments(src: string): string {
 
             const indent = funcMatch[1];
 
-            if (deprecatedMsg !== undefined) out.push(`${indent}---@deprecated${deprecatedMsg ? ` ${deprecatedMsg}` : ""}`);
+            if (deprecatedMsg !== undefined) out.push(`${indent}--- @deprecated${deprecatedMsg ? ` ${deprecatedMsg}` : ""}`);
             for (const desc of descLines) {
                 out.push(`${indent}--- ${desc}`);
             }
             for (const { name, desc } of paramTags) {
                 const type = paramTypes.get(name);
-                out.push(`${indent}---@param ${name}${type ? ` ${type}` : ""}${desc ? ` ${desc}` : ""}`);
+                out.push(`${indent}--- @param ${name}${type ? ` ${type}` : ""}${desc ? ` ${desc}` : ""}`);
             }
             if (returnDesc) {
                 const retType = retTypes[0] ?? "";
-                out.push(`${indent}---@return${retType ? ` ${retType}` : ""} ${returnDesc}`);
+                out.push(`${indent}--- @return${retType ? ` ${retType}` : ""} ${returnDesc}`);
             }
 
             i = j; // skip blank lines, let function line emit normally
