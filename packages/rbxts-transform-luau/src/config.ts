@@ -14,6 +14,20 @@ export interface PluginConfig {
     // Default: true
     annotate?: boolean;
 
+    // Emit Luau type declarations for TypeScript type aliases and interfaces.
+    // Converts TS types → Luau `type` statements, injected after the preamble.
+    // Utility types (Partial, Pick, Omit, …) are emitted as Luau type functions.
+    // Default: true
+    emitTypes?: boolean;
+
+    // Restructure compiled TypeScript classes into idiomatic Luau OOP style:
+    // removes the roblox-ts do...end wrapper, inlines field initialization into
+    // new(), drops the internal constructor function, and adds explicit self
+    // typing so LSP autocomplete works on instance fields and methods.
+    // Disable if you need to preserve the original roblox-ts class layout.
+    // Default: true
+    restructureClasses?: boolean;
+
     // Print per-file processing info to the console during compilation.
     // Default: false
     verbose?: boolean;

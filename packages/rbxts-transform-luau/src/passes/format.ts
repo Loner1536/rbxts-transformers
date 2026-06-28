@@ -1,4 +1,5 @@
 import * as fs from "fs";
+import type { TypeDecl } from "./types";
 
 function byLengthDesc(a: string, b: string): number {
     return b.length - a.length;
@@ -13,23 +14,209 @@ export type FnTypes = {
     ret: string | null;
 };
 
+export type MethodInfo = {
+    name: string;
+    params: Array<{ name: string; type: string | null }>;
+    ret: string | null;
+};
+
+export type ClassInfo = {
+    baseClass: string | null;
+    ctorParams: Array<{ name: string; type: string | null }>;
+    methods: MethodInfo[];
+};
+
+// Returns +N for block openers, -N for closers on a single (trimmed) line.
+function luauLineDepthChange(line: string): number {
+    const ci = line.indexOf("--");
+    const code = ci >= 0 ? line.slice(0, ci) : line;
+    const words = code.match(/\b[a-zA-Z_]\w*\b/g) ?? [];
+    const hasLoopKw = words.some(w => w === "while" || w === "for");
+    let d = 0;
+    for (const w of words) {
+        switch (w) {
+            case "function": case "if": case "while": case "for": case "repeat": d++; break;
+            case "do": if (!hasLoopKw) d++; break;
+            case "end": case "until": d--; break;
+        }
+    }
+    return d;
+}
+
+// Extract lines between an opening line and its matching `end`.
+// Returns the body and the index of the line AFTER the closing `end`.
+function extractBodyLines(allLines: string[], openLine: number): { body: string[]; nextLine: number } {
+    const body: string[] = [];
+    let depth = 1;
+    let i = openLine + 1;
+    while (i < allLines.length && depth > 0) {
+        depth += luauLineDepthChange(allLines[i].trim());
+        if (depth > 0) body.push(allLines[i]);
+        i++;
+    }
+    return { body, nextLine: i };
+}
+
+function defaultPlaceholder(type: string | null): string {
+    switch (type) {
+        case "number": return "0";
+        case "string": return '""';
+        case "boolean": return "false";
+        default: return "nil";
+    }
+}
+
+export function restructureClasses(src: string, classInfoMap: Map<string, ClassInfo>): string {
+    if (classInfoMap.size === 0) return src;
+    for (const [cn, info] of classInfoMap) {
+        src = restructureOneClass(src, cn, info);
+    }
+    return src;
+}
+
+function restructureOneClass(src: string, cn: string, info: ClassInfo): string {
+    const lines = src.split("\n");
+    const esc = escapeRegex(cn);
+
+    // Find `local CN` — bare declaration with no initializer
+    const localRe = new RegExp(`^local ${esc}\\s*$`);
+    let localIdx = -1;
+    for (let i = 0; i < lines.length; i++) {
+        if (localRe.test(lines[i])) { localIdx = i; break; }
+    }
+    if (localIdx === -1) return src;
+
+    // Find `do` line (may have blank lines between)
+    let doIdx = localIdx + 1;
+    while (doIdx < lines.length && lines[doIdx].trim() === "") doIdx++;
+    if (doIdx >= lines.length || lines[doIdx].trim() !== "do") return src;
+
+    // Extract the class block body and locate the closing `end`
+    const { body: blockBody, nextLine: endNextLine } = extractBodyLines(lines, doIdx);
+    const classEndIdx = endNextLine - 1;
+
+    // Parse constructor body for field assignments and optional super call
+    const fieldAssignments: Array<{ field: string; value: string }> = [];
+    let superCallArgs: string | null = null;
+    const ctorSigRe = new RegExp(`^\\s*function ${esc}[.:](constructor)\\(`);
+    const methodSigRe = new RegExp(`^\\s*function ${esc}[.:](?!new\\b|constructor\\b)(\\w+)\\(`);
+    const methodBodies: Map<string, string[]> = new Map();
+
+    for (let i = 0; i < blockBody.length; i++) {
+        if (ctorSigRe.test(blockBody[i])) {
+            const { body, nextLine } = extractBodyLines(blockBody, i);
+            for (const bl of body) {
+                const t = bl.trim();
+                const superMatch = t.match(/^super\.constructor\(self,?\s*(.*?)\)\s*;?$/);
+                if (superMatch) { superCallArgs = superMatch[1].trim(); continue; }
+                const fieldMatch = t.match(/^self\.(\w+)\s*=\s*(.+?)\s*;?$/);
+                if (fieldMatch) fieldAssignments.push({ field: fieldMatch[1], value: fieldMatch[2] });
+            }
+            i = nextLine - 1;
+            continue;
+        }
+        const mm = blockBody[i].match(methodSigRe);
+        if (mm) {
+            const methodName = mm[1];
+            const { body, nextLine } = extractBodyLines(blockBody, i);
+            // Strip leading blank lines
+            let start = 0;
+            while (start < body.length && body[start].trim() === "") start++;
+            methodBodies.set(methodName, body.slice(start));
+            i = nextLine - 1;
+        }
+    }
+
+    // Emit clean class structure
+    const out: string[] = [];
+
+    if (info.baseClass) {
+        out.push(`local ${cn} = setmetatable({}, ${info.baseClass})`);
+    } else {
+        out.push(`local ${cn} = {}`);
+    }
+    out.push(`${cn}.__index = ${cn}`);
+    out.push("");
+
+    const paramDecl = info.ctorParams.map(p => p.type ? `${p.name}: ${p.type}` : p.name).join(", ");
+    out.push(`function ${cn}.new(${paramDecl}): ${cn}`);
+
+    if (info.baseClass && superCallArgs !== null) {
+        out.push(`\tlocal self = ${info.baseClass}.new(${superCallArgs}) :: any`);
+        for (const { field, value } of fieldAssignments) {
+            out.push(`\tself.${field} = ${value}`);
+        }
+        out.push(`\treturn (setmetatable(self, ${cn}) :: any) :: ${cn}`);
+    } else if (fieldAssignments.length > 0) {
+        out.push(`\treturn setmetatable({`);
+        for (const { field, value } of fieldAssignments) {
+            out.push(`\t\t${field} = ${value},`);
+        }
+        out.push(`\t}, ${cn}) :: ${cn}`);
+    } else {
+        out.push(`\treturn setmetatable({}, ${cn}) :: ${cn}`);
+    }
+    out.push("end");
+    out.push("");
+
+    for (const m of info.methods) {
+        const selfAndParams = [`self: ${cn}`, ...m.params.map(p => p.type ? `${p.name}: ${p.type}` : p.name)].join(", ");
+        const retStr = m.ret ? `: ${m.ret}` : "";
+        out.push(`function ${cn}.${m.name}(${selfAndParams})${retStr}`);
+        const body = methodBodies.get(m.name) ?? [];
+        // Method bodies were at 2-tab depth inside do...end; normalize to 1-tab.
+        const bodyIndent = body[0]?.match(/^(\t+)/)?.[1].length ?? 1;
+        const stripTabs = bodyIndent > 1 ? bodyIndent - 1 : 0;
+        for (const bl of body) out.push(stripTabs > 0 ? bl.replace(new RegExp(`^\t{1,${stripTabs}}`), "") : bl);
+        out.push("end");
+        out.push("");
+    }
+
+    const before = lines.slice(0, localIdx);
+    const after = lines.slice(classEndIdx + 1);
+    return [...before, ...out, ...after].join("\n");
+}
+
+function annotateParams(rawParams: string, vararg: string | undefined, ann: FnTypes): string {
+    const names = rawParams.split(",").map((s: string) => s.trim()).filter(Boolean);
+    const annotated = names.map((name: string, i: number) => {
+        if (name.includes(":")) return name;
+        const typ = ann.params[i];
+        return typ ? `${name}: ${typ}` : name;
+    });
+    if (vararg) annotated.push("...");
+    return annotated.join(", ");
+}
+
 export function injectTypeAnnotations(src: string, types: Map<string, FnTypes>): string {
     if (types.size === 0) return src;
-    for (const [fnName, ann] of types) {
+    for (const [key, ann] of types) {
         if (ann.params.every(p => p === null) && ann.ret === null) continue;
-        const re = new RegExp(
-            `(local function ${escapeRegex(fnName)}\\()([^)]*)(\\.\\.\\.)?(\\))(?:\\s*:\\s*[^\\r\\n]+)?`,
-        );
-        src = src.replace(re, (_m, open: string, rawParams: string, vararg: string | undefined, close: string) => {
-            const names = rawParams.split(",").map((s: string) => s.trim()).filter(Boolean);
-            const annotated = names.map((name: string, i: number) => {
-                const bare = name.split(":")[0].trim();
-                const typ = ann.params[i];
-                return typ ? `${bare}: ${typ}` : bare;
+
+        const colonIdx = key.indexOf(":");
+        if (colonIdx === -1) {
+            // Plain function: local function name(params)
+            const re = new RegExp(
+                `(local function ${escapeRegex(key)}\\()([^)]*)(\\.\\.\\.)?(\\))(\\s*:\\s*[^\\r\\n]+)?`,
+            );
+            src = src.replace(re, (_m, open: string, rawParams: string, vararg: string | undefined, close: string, existingRet: string | undefined) => {
+                const params = annotateParams(rawParams, vararg, ann);
+                const ret = existingRet ?? (ann.ret ? `: ${ann.ret}` : "");
+                return `${open}${params}${close}${ret}`;
             });
-            if (vararg) annotated.push("...");
-            return `${open}${annotated.join(", ")}${close}${ann.ret ? `: ${ann.ret}` : ""}`;
-        });
+        } else {
+            // Class method: function ClassName:methodName(params)
+            const className = escapeRegex(key.slice(0, colonIdx));
+            const methodName = escapeRegex(key.slice(colonIdx + 1));
+            const re = new RegExp(
+                `(function ${className}:${methodName}\\()([^)]*)(\\.\\.\\.)?(\\))(\\s*:\\s*[^\\r\\n]+)?`,
+            );
+            src = src.replace(re, (_m, open: string, rawParams: string, vararg: string | undefined, close: string, existingRet: string | undefined) => {
+                const params = annotateParams(rawParams, vararg, ann);
+                const ret = existingRet ?? (ann.ret ? `: ${ann.ret}` : "");
+                return `${open}${params}${close}${ret}`;
+            });
+        }
     }
     return src;
 }
@@ -293,7 +480,8 @@ export function addSpacing(src: string): string {
                 /^return\b/.test(trimmed) &&
                 !/\b(then|do|repeat)$/.test(prevTrimmed) &&
                 !/function\s*\([^)]*\)$/.test(prevTrimmed) &&
-                !/^local function /.test(prevTrimmed)
+                !/^local function /.test(prevTrimmed) &&
+                !/^function\b/.test(prevTrimmed)
             ) {
                 out.push("");
             } else if (
@@ -528,14 +716,63 @@ export function applyDirectives(src: string, strict: boolean, optimizeLevel: fal
 
 const writingFiles = new Set<string>();
 
+export function injectLuauTypes(src: string, decls: TypeDecl[], typeFunctions: string[]): string {
+    if (decls.length === 0 && typeFunctions.length === 0) return src;
+
+    const lines = src.split("\n");
+    // Find end of preamble: skip --! directives, "-- Compiled" comment, blank lines
+    let insertAt = 0;
+    for (let i = 0; i < lines.length; i++) {
+        const t = lines[i].trim();
+        if (t.startsWith("--!") || t.startsWith("-- Compiled") || t === "") {
+            insertAt = i + 1;
+        } else {
+            break;
+        }
+    }
+
+    const block: string[] = [];
+    if (typeFunctions.length > 0) {
+        block.push("", "-- Type functions (generated from TypeScript utility types)");
+        for (const fn of typeFunctions) {
+            block.push(fn, "");
+        }
+    }
+    if (decls.length > 0) {
+        block.push("-- Types");
+        for (const d of decls) {
+            block.push(d.luau);
+        }
+    }
+    if (block.length > 0) block.push("");
+
+    lines.splice(insertAt, 0, ...block);
+    return lines.join("\n");
+}
+
+// For each class that has a declared structural type, do three rewrites:
+//
+// 1. setmetatable({}, Cls) → setmetatable({} :: Cls, Cls)
+//    Makes the instance table carry the declared field types.
+//
+// 2. function Cls:method(params): ret → function Cls.method(self: Cls, params): ret
+//    Moves from implicit-self colon syntax to explicit-self dot syntax so the
+//    new Luau solver can resolve self.field as the declared type instead of unknown.
+//    Call sites using : still work — `v:method()` is sugar for `Cls.method(v)`.
+//
+// 3. Rewrite the new() body so `self:constructor(...)` → `Cls.constructor(self, ...)`
 export function formatFile(
     luauPath: string,
     strict: boolean,
     optimizeLevel: false | 0 | 1 | 2,
     sidecar: Map<string, FnDoc> = new Map(),
     types: Map<string, FnTypes> = new Map(),
+    typeDecls: TypeDecl[] = [],
+    typeFunctions: string[] = [],
+    classInfoMap: Map<string, ClassInfo> = new Map(),
 ): void {
     if (writingFiles.has(luauPath)) return;
+
     if (!fs.existsSync(luauPath)) return;
 
     let src = fs.readFileSync(luauPath, "utf8");
@@ -550,6 +787,8 @@ export function formatFile(
     apply(hoistGetService);
     apply(fixBlockCommentOpeners);
     apply(organizePreamble);
+    apply(s => injectLuauTypes(s, typeDecls, typeFunctions));
+    apply(s => restructureClasses(s, classInfoMap));
     apply(s => injectTypeAnnotations(s, types));
     apply(castTsImports);
     apply(promoteConsts);

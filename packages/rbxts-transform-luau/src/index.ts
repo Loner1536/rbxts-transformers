@@ -1,7 +1,8 @@
 import ts from "typescript";
 import * as path from "path";
 import type { PluginConfig } from "./config";
-import { formatFile, type FnDoc, type FnTypes } from "./passes/format";
+import { formatFile, type FnDoc, type FnTypes, type ClassInfo, type MethodInfo } from "./passes/format";
+import { collectTypeDecls, type TypeDecl } from "./passes/types";
 export type { PluginConfig };
 
 const LUAU_TYPE: Record<string, string> = {
@@ -74,29 +75,48 @@ function mapTypeNode(typeNode: ts.TypeNode): string | null {
     return null;
 }
 
+// Returns true if the TypeScript type is a user-defined class or interface —
+// meaning we can use its name as a Luau type annotation directly.
+function isUserDefinedType(tsType: ts.Type): boolean {
+    const sym = tsType.getSymbol();
+    if (!sym) return false;
+    return (sym.getDeclarations() ?? []).some(
+        d => ts.isClassDeclaration(d) || ts.isInterfaceDeclaration(d),
+    );
+}
+
+function luauTypeForTs(checker: ts.TypeChecker, tsType: ts.Type): string | null {
+    const name = checker.typeToString(tsType);
+    if (LUAU_TYPE[name]) return LUAU_TYPE[name];
+    if (isUserDefinedType(tsType)) return name;
+    return null;
+}
+
 function luauTypeForParam(checker: ts.TypeChecker, node: ts.ParameterDeclaration): string | null {
     if (node.type) {
         const mapped = mapTypeNode(node.type);
         if (mapped) return mapped;
     }
-    const name = checker.typeToString(checker.getTypeAtLocation(node));
-    return LUAU_TYPE[name] ?? null;
+    return luauTypeForTs(checker, checker.getTypeAtLocation(node));
 }
 
-function luauTypeForReturn(checker: ts.TypeChecker, node: ts.FunctionDeclaration): string | null {
+function luauTypeForReturn(checker: ts.TypeChecker, node: ts.FunctionDeclaration | ts.MethodDeclaration): string | null {
     if (node.type) {
         const mapped = mapTypeNode(node.type);
         if (mapped) return mapped;
     }
     const sig = checker.getSignatureFromDeclaration(node);
     if (!sig) return null;
-    const ret = checker.getReturnTypeOfSignature(sig);
-    const name = checker.typeToString(ret);
-    return LUAU_TYPE[name] ?? null;
+    return luauTypeForTs(checker, checker.getReturnTypeOfSignature(sig));
 }
 
-function collectTypes(checker: ts.TypeChecker, sourceFile: ts.SourceFile): Map<string, FnTypes> {
+function collectTypes(checker: ts.TypeChecker, sourceFile: ts.SourceFile): {
+    types: Map<string, FnTypes>;
+    classInfoMap: Map<string, ClassInfo>;
+} {
     const types = new Map<string, FnTypes>();
+    const classInfoMap = new Map<string, ClassInfo>();
+
     function visit(node: ts.Node): void {
         if (ts.isFunctionDeclaration(node) && node.name) {
             const params = node.parameters.map(p => luauTypeForParam(checker, p));
@@ -105,10 +125,59 @@ function collectTypes(checker: ts.TypeChecker, sourceFile: ts.SourceFile): Map<s
                 types.set(node.name.text, { params, ret });
             }
         }
+        if (ts.isClassDeclaration(node) && node.name) {
+            const className = node.name.text;
+            for (const member of node.members) {
+                if (ts.isMethodDeclaration(member) && ts.isIdentifier(member.name)) {
+                    const params = member.parameters.map(p => luauTypeForParam(checker, p));
+                    const ret = luauTypeForReturn(checker, member);
+                    if (params.some(p => p !== null) || ret !== null) {
+                        types.set(`${className}:${member.name.text}`, { params, ret });
+                    }
+                }
+            }
+        }
         ts.forEachChild(node, visit);
     }
     visit(sourceFile);
-    return types;
+
+    // Build ClassInfo for restructuring class blocks into idiomatic Luau OOP.
+    for (const stmt of sourceFile.statements) {
+        if (!ts.isClassDeclaration(stmt) || !stmt.name) continue;
+        const cn = stmt.name.text;
+
+        let baseClass: string | null = null;
+        for (const clause of stmt.heritageClauses ?? []) {
+            if (clause.token === ts.SyntaxKind.ExtendsKeyword && clause.types.length > 0) {
+                const t = clause.types[0];
+                if (ts.isIdentifier(t.expression)) baseClass = t.expression.text;
+            }
+        }
+
+        const ctorParams: ClassInfo["ctorParams"] = [];
+        const methods: MethodInfo[] = [];
+
+        for (const m of stmt.members) {
+            if (ts.isConstructorDeclaration(m)) {
+                for (const p of m.parameters) {
+                    ctorParams.push({
+                        name: ts.isIdentifier(p.name) ? p.name.text : "_",
+                        type: luauTypeForParam(checker, p),
+                    });
+                }
+            } else if (ts.isMethodDeclaration(m) && ts.isIdentifier(m.name)) {
+                const methodParams = m.parameters.map(p => ({
+                    name: ts.isIdentifier(p.name) ? p.name.text : "_",
+                    type: luauTypeForParam(checker, p),
+                }));
+                methods.push({ name: m.name.text, params: methodParams, ret: luauTypeForReturn(checker, m) });
+            }
+        }
+
+        classInfoMap.set(cn, { baseClass, ctorParams, methods });
+    }
+
+    return { types, classInfoMap };
 }
 
 function outPathForSource(sourceFile: ts.SourceFile, program: ts.Program): string | null {
@@ -143,9 +212,15 @@ type FileMeta = {
     strict: boolean;
     optimizeLevel: false | 0 | 1 | 2;
     annotate: boolean;
+    emitTypes: boolean;
+    doRestructure: boolean;
     verbose: boolean;
     sidecar: Map<string, FnDoc>;
     types: Map<string, FnTypes>;
+    classInfoMap: Map<string, ClassInfo>;
+    typeDecls: TypeDecl[];
+    typeFunctions: string[];
+    classNames: string[];
 };
 
 const pending = new Map<string, FileMeta>();
@@ -154,7 +229,16 @@ let finalizeRegistered = false;
 
 function processFile(meta: FileMeta): void {
     try {
-        formatFile(meta.outPath, meta.strict, meta.optimizeLevel, meta.sidecar, meta.annotate ? meta.types : new Map());
+        formatFile(
+            meta.outPath,
+            meta.strict,
+            meta.optimizeLevel,
+            meta.sidecar,
+            meta.annotate ? meta.types : new Map(),
+            meta.emitTypes ? meta.typeDecls : [],
+            meta.emitTypes ? meta.typeFunctions : [],
+            meta.annotate && meta.doRestructure ? meta.classInfoMap : new Map(),
+        );
     } catch {
         // silently skip files that fail — they stay as-is
     }
@@ -167,14 +251,15 @@ function flushPending(): void {
     pending.clear();
 }
 
-// roblox-ts/TS emit is synchronous: by the time any timer callback runs, every
-// .luau file for this cycle is already on disk. Debounce so we format once per
-// compile cycle, just after emit — works in both single-build and watch mode.
-// 60ms > boost's 50ms so boost's hoisting lands before we format.
+// roblox-ts emit is synchronous — files are on disk when the timer fires.
+// Rotor (Go binary) writes .luau files after the TypeScript plugin exits, so
+// we keep the timer ref'd (process stays alive) and use a longer delay to give
+// rotor time to finish writing before we post-process.
+// 100ms > boost's 50ms so boost's hoisting lands before we format.
 function scheduleFlush(): void {
     if (flushTimer) clearTimeout(flushTimer);
-    flushTimer = setTimeout(() => { flushTimer = null; flushPending(); }, 60);
-    flushTimer.unref?.();
+    flushTimer = setTimeout(() => { flushTimer = null; flushPending(); }, 100);
+    // Do NOT unref — keeps the process alive so rotor has time to write files.
 }
 
 function registerFinalizer(): void {
@@ -235,7 +320,7 @@ export default function (
     program: ts.Program,
     config: PluginConfig = {},
 ): ts.TransformerFactory<ts.SourceFile> {
-    const { strict = true, optimize = false, annotate = true, verbose = false } = config;
+    const { strict = true, optimize = false, annotate = true, emitTypes = true, restructureClasses: doRestructure = true, verbose = false } = config;
     const optimizeLevel: false | 0 | 1 | 2 = optimize === false ? false : ([0, 1, 2] as const).includes(optimize as 0|1|2) ? optimize : 2;
 
     // Watch mode: process any leftovers from the previous cycle before this one.
@@ -249,8 +334,13 @@ export default function (
         const outPath = outPathForSource(sourceFile, program);
         if (outPath) {
             const sidecar = collectJsDoc(ts, sourceFile);
-            const types = checker ? collectTypes(checker, sourceFile) : new Map<string, FnTypes>();
-            pending.set(outPath, { outPath, strict, optimizeLevel, annotate, verbose, sidecar, types });
+            const { types, classInfoMap } = checker
+                ? collectTypes(checker, sourceFile)
+                : { types: new Map<string, FnTypes>(), classInfoMap: new Map<string, ClassInfo>() };
+            const { decls: typeDecls, typeFunctions, classNames } = emitTypes
+                ? collectTypeDecls(sourceFile, types)
+                : { decls: [], typeFunctions: [], classNames: [] };
+            pending.set(outPath, { outPath, strict, optimizeLevel, annotate, emitTypes, doRestructure, verbose, sidecar, types, classInfoMap, typeDecls, typeFunctions, classNames });
             scheduleFlush();
             if (verbose) {
                 const rel = outDir ? path.relative(outDir, outPath) : outPath;
