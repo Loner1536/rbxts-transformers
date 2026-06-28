@@ -250,27 +250,29 @@ export function promoteConstIfUnmutated(src: string, name: string): string {
     return lines.join("\n");
 }
 
-export function promoteAllTopLevelConsts(src: string): string {
+export function promoteConsts(src: string): string {
     const lines = src.split("\n");
-    const topLevelDeclRe = /^local ([A-Za-z_][A-Za-z0-9_]*) =/;
-    const candidates = new Map<string, number>();
+    // Match any `local name =` at any indent level (not `local function`)
+    const declRe = /^(\t*)local ([A-Za-z_][A-Za-z0-9_]*) =/;
+    const toPromote: number[] = [];
 
     for (let i = 0; i < lines.length; i++) {
-        const m = lines[i].match(topLevelDeclRe);
+        const m = lines[i].match(declRe);
         if (!m) continue;
-        if (!candidates.has(m[1])) candidates.set(m[1], i);
-    }
-
-    for (const [name, declLine] of candidates) {
-        const escaped = escapeRegex(name);
-        const reassignRe = new RegExp(`(?:^|\\t)${escaped}\\s*(?:\\+|-|\\*|/{1,2}|%|\\^|\\.\\.)?=(?!=)`);
+        const name = m[2];
+        // A mutation is any bare assignment to this name anywhere in the file after declaration
+        const mutRe = new RegExp(`(?:^|\\t)${escapeRegex(name)}\\s*(?:[+\\-*/%^]|\\.\\.|/{1,2})?=(?!=)`);
         let mutated = false;
-        for (let j = declLine + 1; j < lines.length; j++) {
-            if (reassignRe.test(lines[j])) { mutated = true; break; }
+        for (let j = i + 1; j < lines.length; j++) {
+            if (mutRe.test(lines[j])) { mutated = true; break; }
         }
-        if (!mutated) lines[declLine] = lines[declLine].replace(/^local /, "const ");
+        if (!mutated) toPromote.push(i);
     }
 
+    if (toPromote.length === 0) return src;
+    for (const i of toPromote) {
+        lines[i] = lines[i].replace(/^(\t*)local /, "$1const ");
+    }
     return lines.join("\n");
 }
 
@@ -549,6 +551,7 @@ export function formatFile(
     apply(fixBlockCommentOpeners);
     apply(organizePreamble);
     apply(s => injectTypeAnnotations(s, types));
+    apply(promoteConsts);
     apply(convertJsDocComments);
     apply(s => injectJsDocFromSidecar(s, sidecar));
     apply(stripUselessBlockComments);

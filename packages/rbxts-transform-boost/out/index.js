@@ -120,41 +120,6 @@ function hoistServices(src) {
 const pendingPaths = new Set();
 const writingFiles = new Set();
 let finalizeRegistered = false;
-// Promotes local variables that are never reassigned to const throughout the
-// file, at any nesting depth. Runs post-emit so it catches compiler-generated
-// locals that the AST pass couldn't see.
-function promoteConsts(src) {
-    const lines = src.split("\n");
-    const localRe = /^(\t*)local ([A-Za-z_][A-Za-z0-9_]*) =/;
-    const changed = [];
-    for (let i = 0; i < lines.length; i++) {
-        const m = lines[i].match(localRe);
-        if (!m)
-            continue;
-        const name = m[2];
-        const indent = m[1].length;
-        const reassignRe = new RegExp(`^\\t{0,${indent}}${name}\\s*(?:\\+|-|\\*|/{1,2}|%|\\^|\\.\\.)?=(?!=)`);
-        let mutated = false;
-        for (let j = i + 1; j < lines.length; j++) {
-            const t = lines[j];
-            const tIndent = t.match(/^\t*/)?.[0].length ?? 0;
-            if (tIndent < indent && t.trim() !== "")
-                break;
-            if (reassignRe.test(t)) {
-                mutated = true;
-                break;
-            }
-        }
-        if (!mutated)
-            changed.push(i);
-    }
-    if (changed.length === 0)
-        return src;
-    for (const i of changed) {
-        lines[i] = lines[i].replace(/^(\t*)local /, "$1const ");
-    }
-    return lines.join("\n");
-}
 function flushPending() {
     for (const outPath of pendingPaths) {
         if (!fs.existsSync(outPath))
@@ -170,11 +135,6 @@ function flushPending() {
             const afterLift = liftDirectives(src);
             if (afterLift !== src) {
                 src = afterLift;
-                changed = true;
-            }
-            const afterConsts = promoteConsts(src);
-            if (afterConsts !== src) {
-                src = afterConsts;
                 changed = true;
             }
             if (changed) {
