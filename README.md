@@ -9,7 +9,7 @@ A collection of TypeScript transformer plugins for [roblox-ts](https://roblox-ts
 | [`rbxts-transform-boost`](packages/rbxts-transform-boost) | [![npm](https://img.shields.io/npm/v/rbxts-transform-boost)](https://www.npmjs.com/package/rbxts-transform-boost) | GetService hoisting, property chain caching, loop bounds hoisting, `const` promotion |
 | [`rbxts-transform-luau`](packages/rbxts-transform-luau) | [![npm](https://img.shields.io/npm/v/rbxts-transform-luau)](https://www.npmjs.com/package/rbxts-transform-luau) | Preamble formatting, TS.import type hints, JSDoc conversion, Luau type annotations, `--!strict`/`--!optimize` |
 
-Each package is independent — use any combination, in any order.
+Each package is independent — use any combination, in any order. Click a package name in the table above to see its full README with all options and examples.
 
 ---
 
