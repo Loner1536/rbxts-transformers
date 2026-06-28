@@ -343,31 +343,22 @@ export function injectJsDocFromSidecar(src: string, sidecar: Map<string, FnDoc>)
             const name = funcMatch[2];
             const doc = sidecar.get(name);
             const prevTrimmed = out.length > 0 ? out[out.length - 1].trim() : "";
-            const alreadyHasDoc = /^---/.test(prevTrimmed);
+            const alreadyHasDoc = /^\]\]$|^---/.test(prevTrimmed) || prevTrimmed === "--[[";
 
             if (doc && !alreadyHasDoc) {
                 const indent = funcMatch[1];
-                const paramTypes = new Map<string, string>();
-                if (funcMatch[3].trim()) {
-                    for (const part of funcMatch[3].split(",")) {
-                        const pm = part.trim().match(/^(\w+)(\??):\s*(.+)$/);
-                        if (pm) paramTypes.set(pm[1], pm[2] ? `${pm[3].trim()}?` : pm[3].trim());
-                    }
-                }
-                const rawRet = funcMatch[4]?.trim() ?? "";
-                let retType = "";
-                if (rawRet) {
-                    retType = rawRet.startsWith("(") && rawRet.endsWith(")")
-                        ? rawRet.slice(1, -1).split(",")[0]?.trim() ?? ""
-                        : rawRet;
-                }
-                for (const desc of doc.desc) out.push(`${indent}--- ${desc}`);
+                const body: string[] = [];
+                for (const desc of doc.desc) body.push(`${indent}\t * ${desc}`);
                 for (const [paramName, paramDesc] of doc.params) {
-                    const type = paramTypes.get(paramName);
-                    out.push(`${indent}---@param ${paramName}${type ? ` ${type}` : ""}${paramDesc ? ` — ${paramDesc}` : ""}`);
+                    body.push(`${indent}\t * @param ${paramName}${paramDesc ? ` ${paramDesc}` : ""}`);
                 }
-                if (doc.returns) {
-                    out.push(`${indent}---@return${retType ? ` ${retType}` : ""} — ${doc.returns}`);
+                if (doc.returns) body.push(`${indent}\t * @returns ${doc.returns}`);
+                if (body.length > 0) {
+                    out.push(`${indent}--[[`);
+                    out.push(`${indent}\t *`);
+                    for (const bl of body) out.push(bl);
+                    out.push(`${indent}\t `);
+                    out.push(`${indent}]]`);
                 }
             }
         }
@@ -516,7 +507,6 @@ export function formatFile(
     apply(hoistGetService);
     apply(fixBlockCommentOpeners);
     apply(organizePreamble);
-    apply(convertJsDocComments);
     apply(s => injectJsDocFromSidecar(s, sidecar));
     apply(stripUselessBlockComments);
     apply(castTsImports);
